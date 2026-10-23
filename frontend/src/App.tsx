@@ -11,6 +11,8 @@ import { type Theme, applyTheme, initialTheme, savedTheme, saveTheme } from "./t
 import { createTimeline } from "./timeline";
 import type { Checkpoint, TripPlan, TripRequest } from "./types";
 
+const HEATMAP_RETRY_MS = 25_000;
+
 export default function App() {
   const [plan, setPlan] = useState<TripPlan | null>(null);
   const [places, setPlaces] = useState<{ origin: string; destination: string } | null>(null);
@@ -23,9 +25,11 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [focus, setFocus] = useState<{ checkpoint: Checkpoint; key: number } | null>(null);
   const inflight = useRef<AbortController | null>(null);
+  const refillTimer = useRef<number | undefined>(undefined);
 
   const submit = useCallback(async (req: TripRequest) => {
     inflight.current?.abort();
+    window.clearTimeout(refillTimer.current);
     const controller = new AbortController();
     inflight.current = controller;
     setLoading(true);
@@ -37,6 +41,18 @@ export default function App() {
       setPlaces({ origin: req.origin.label, destination: req.destination.label });
       setSelectedId(result.recommended_route_id);
       timeline.set(0);
+      // A throttled heatmap is fetched again shortly; the checkpoint forecasts are
+      // cached by then, so the second request only asks for the corridor points.
+      if (!result.heatmap && result.heatmap_error?.includes("busy")) {
+        refillTimer.current = window.setTimeout(async () => {
+          try {
+            const again = await planTrip(req, controller.signal);
+            if (again.heatmap) setPlan((current) => current && { ...current, heatmap: again.heatmap, heatmap_error: null });
+          } catch {
+            // Keep the routes; the note on the map stays.
+          }
+        }, HEATMAP_RETRY_MS);
+      }
     } catch (e) {
       if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
@@ -112,7 +128,11 @@ export default function App() {
             playing={playing} onPlaying={setPlaying} />
         )}
         {plan && !plan.heatmap && (
-          <div className="map-note">Corridor forecast unavailable: {plan.heatmap_error}</div>
+          <div className="map-note">
+            {plan.heatmap_error?.includes("busy")
+              ? "The free weather service is busy, so the corridor heatmap will load in a few seconds."
+              : `Corridor forecast unavailable: ${plan.heatmap_error}`}
+          </div>
         )}
       </main>
     </div>

@@ -79,8 +79,8 @@ A classic density heatmap (MapLibre's `heatmap` layer) colours by *how much weig
 Open-Meteo's free tier allows 600 calls a minute and counts every location as a call, so the weather client is built around a budget:
 
 - Forecasts are cached **per location** for 20 minutes, with coordinates snapped to a 0.05° grid (about 3 mi, finer than the weather models). Re-planning with another load or interval, or another trip through the same area, reuses them.
-- A plan uses at most 400 locations. Checkpoints come first: each gets its own lookup, up to 320. The corridor heatmap gets the rest (80–180 points). For example, Chicago → Denver at 10-mile spacing (327 checkpoints) still samples each checkpoint on its own. Only coast-to-coast trips at 10-mile spacing go over, and then neighbouring checkpoints share a coarser grid cell; ETAs and risk are still computed per checkpoint.
-- If the weather API throttles (its limit is per minute, and a hosted app may share an IP with others), the client waits 12 s and retries, up to three times, inside the 60 s serverless limit. Each batch is cached as soon as it arrives, so retries never re-fetch. If it is still throttled, the API returns **503 with `Retry-After: 60`** and a clear message instead of hanging; an outage returns 502. If only the heatmap fails, the routes and recommendation are still returned.
+- A plan uses at most 350 locations, so a second fresh plan fits in the same minute. Checkpoints come first: each gets its own lookup, up to 290. The corridor heatmap gets the rest (60–180 points). For example, Chicago → Denver at 10-mile spacing (327 checkpoints) still samples each checkpoint on its own. Only coast-to-coast trips at 10-mile spacing go over, and then neighbouring checkpoints share a coarser grid cell; ETAs and risk are still computed per checkpoint.
+- If the weather API throttles (its limit is per minute, and a hosted app may share an IP with others), the checkpoint forecasts the recommendation depends on wait 12 s and retry, up to three times, inside the 60 s serverless limit. The heatmap gives up at once instead: the routes and recommendation come back straight away, and the page fetches the heatmap again 25 s later (the checkpoints are cached by then, so only the corridor points are requested). Each batch is cached as soon as it arrives. If the checkpoints are still throttled, the API returns **503 with `Retry-After: 60`** and a clear message instead of hanging; an outage returns 502. If only the heatmap fails, the routes and recommendation are still returned.
 - The frontend gives up after 70 s (the serverless limit is 60 s) with a readable message.
 
 All rules live in [`backend/routing/domain/risk.py`](backend/routing/domain/risk.py) and are covered boundary by boundary in [`tests/test_risk.py`](backend/tests/test_risk.py).
@@ -141,7 +141,7 @@ npm install
 npm run dev                           # http://localhost:5173, /api is proxied to Django
 ```
 
-Tests: `cd backend && pytest` (72 tests: every threshold boundary and load rule, the ranking and its explanation, mile attribution, corridor sampling, route naming, the three-route guarantee, per-checkpoint weather lookups, place search, and the API with OSRM and Open-Meteo faked, including unroutable, outage, rate-limit retry and partial-failure paths).
+Tests: `cd backend && pytest` (73 tests: every threshold boundary and load rule, the ranking and its explanation, mile attribution, corridor sampling, route naming, the three-route guarantee, per-checkpoint weather lookups, place search, and the API with OSRM and Open-Meteo faked, including unroutable, outage, rate-limit retry and partial-failure paths).
 
 ### Configuration
 

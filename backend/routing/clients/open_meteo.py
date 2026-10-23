@@ -75,8 +75,12 @@ def snap(point: tuple[float, float], degrees: float = SNAP_DEGREES) -> tuple[flo
     return round(round(lon / degrees) * degrees, 4), round(round(lat / degrees) * degrees, 4)
 
 
-def hourly(points: Sequence[tuple[float, float]], start: datetime, hours: int) -> list[HourlySeries]:
-    """Forecast `hours` hourly steps from `start` (floored to the hour) for every (lon, lat) point."""
+def hourly(points: Sequence[tuple[float, float]], start: datetime, hours: int,
+           retries: int = RATE_LIMIT_RETRIES) -> list[HourlySeries]:
+    """Forecast `hours` hourly steps from `start` (floored to the hour) for every (lon, lat) point.
+
+    `retries` is how many times to wait out a rate limit before giving up.
+    """
     start = floor_hour(start)
     now = floor_hour(datetime.now(timezone.utc))
     if start + timedelta(hours=hours) > now + timedelta(days=MAX_FORECAST_DAYS):
@@ -92,7 +96,8 @@ def hourly(points: Sequence[tuple[float, float]], start: datetime, hours: int) -
         chunks = [missing[i:i + CHUNK_SIZE] for i in range(0, len(missing), CHUNK_SIZE)]
 
         def load(chunk: list[tuple[float, float]]) -> dict[str, HourlySeries]:
-            fresh = {keys[cell]: series for cell, series in zip(chunk, _fetch_with_retry(chunk, first_day, last_day))}
+            fetched = _fetch_with_retry(chunk, first_day, last_day, retries)
+            fresh = {keys[cell]: series for cell, series in zip(chunk, fetched)}
             # Cached per chunk as it arrives, so a retried plan never re-asks for these.
             cache.set_many(fresh, FORECAST_TTL_SECONDS)
             return fresh
@@ -107,12 +112,13 @@ def _cache_key(cell: tuple[float, float], first_day: date, last_day: date) -> st
     return f"openmeteo:{cell[0]},{cell[1]}:{first_day.isoformat()}:{last_day.isoformat()}"
 
 
-def _fetch_with_retry(points: Sequence[tuple[float, float]], first_day: date, last_day: date) -> list[HourlySeries]:
-    for attempt in range(RATE_LIMIT_RETRIES + 1):
+def _fetch_with_retry(points: Sequence[tuple[float, float]], first_day: date, last_day: date,
+                     retries: int) -> list[HourlySeries]:
+    for attempt in range(retries + 1):
         try:
             return _fetch_chunk(points, first_day, last_day)
         except RateLimited:
-            if attempt == RATE_LIMIT_RETRIES:
+            if attempt == retries:
                 raise
             clock.sleep(RATE_LIMIT_WAIT_SECONDS)
     raise AssertionError("unreachable")

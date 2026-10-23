@@ -178,8 +178,9 @@ def test_replanning_reuses_cached_forecasts(fake_upstreams):
 def test_typical_trips_get_one_weather_lookup_per_checkpoint():
     from routing import services
 
-    # Three ~1,000 mile routes at 10-mile spacing, well apart: about 300 checkpoints.
-    points = [(-100 + lane, 30 + i * 0.145) for lane in (0, 1.5, 3) for i in range(100)]
+    # Three ~900 mile routes at 10-mile spacing, well apart: 270 checkpoints, about what
+    # Chicago -> Denver needs (273 distinct after shared stretches).
+    points = [(-100 + lane, 30 + i * 0.145) for lane in (0, 1.5, 3) for i in range(90)]
     lookups = services._lookup_points(points)
     assert len(set(lookups)) == len(points)
 
@@ -229,18 +230,49 @@ def test_geocode_ignores_one_letter_queries():
     assert resp.status_code == 200 and resp.json() == {"results": []}
 
 
-def test_weather_rate_limit_is_waited_out_and_retried():
-    calls = {"meteo": 0}
+def _throttled_meteo(throttled_requests: int):
+    """Open-Meteo that answers 429 to its first `throttled_requests` requests."""
+    calls = {"n": 0}
 
-    def flaky_meteo(request):
-        calls["meteo"] += 1
-        if calls["meteo"] == 1:
+    def callback(request):
+        calls["n"] += 1
+        if calls["n"] <= throttled_requests:
             return 429, {}, json.dumps({"error": True, "reason": "Minutely API request limit exceeded."})
         return _meteo_callback(request)
 
-    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
-        rsps.add_callback(responses.GET, re.compile(r"https://router\.project-osrm\.org/.*"), callback=_osrm_callback)
-        rsps.add_callback(responses.GET, re.compile(r"https://api\.open-meteo\.com/.*"), callback=flaky_meteo)
-        resp = APIClient().post("/api/plan", _plan_body(), format="json")
-    assert resp.status_code == 200
-    assert resp.json()["heatmap"] is not None and calls["meteo"] >= 3
+    return calls, callback
+
+
+def _count_waits(monkeypatch):
+    from types import SimpleNamespace
+    from routing.clients import open_meteo
+
+    waits = []
+    monkeypatch.setattr(open_meteo, "clock", SimpleNamespace(sleep=waits.append))
+    return waits
+
+
+def test_checkpoint_forecasts_wait_out_a_rate_limit(monkeypatch):
+    from routing.clients import open_meteo
+
+    waits = _count_waits(monkeypatch)
+    # Enough 429s to exhaust the HTTP layer's quick retries once.
+    calls, callback = _throttled_meteo(throttled_requests=4)
+    with responses.RequestsMock() as rsps:
+        rsps.add_callback(responses.GET, re.compile(r"https://api\.open-meteo\.com/.*"), callback=callback)
+        series = open_meteo.hourly([(-90.0, 38.0)], datetime.now(timezone.utc), 6)
+    assert len(series) == 1
+    assert len(waits) == 1
+
+
+def test_heatmap_forecasts_do_not_wait_on_a_rate_limit(monkeypatch):
+    from routing.clients import open_meteo
+    from routing.clients.http import RateLimited
+
+    waits = _count_waits(monkeypatch)
+    calls, callback = _throttled_meteo(throttled_requests=100)
+    with responses.RequestsMock() as rsps:
+        rsps.add_callback(responses.GET, re.compile(r"https://api\.open-meteo\.com/.*"), callback=callback)
+        with pytest.raises(RateLimited):
+            open_meteo.hourly([(-90.0, 38.0)], datetime.now(timezone.utc), 6, retries=0)
+    assert waits == []

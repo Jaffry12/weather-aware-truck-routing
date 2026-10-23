@@ -27,9 +27,10 @@ SIMPLIFY_TOLERANCE_DEG = 0.0005  # about 50 m, plenty for drawing
 # Open-Meteo's free tier counts every location as an API call (600 a minute), so
 # one plan stays well inside that. Checkpoints come first: each gets its own
 # lookup up to MAX_CHECKPOINT_LOCATIONS; the corridor heatmap gets what is left.
-MAX_PLAN_LOCATIONS = 400
-MAX_CHECKPOINT_LOCATIONS = 320
-MIN_HEATMAP_POINTS = 80
+# 350 leaves room for a second fresh plan in the same minute.
+MAX_PLAN_LOCATIONS = 350
+MAX_CHECKPOINT_LOCATIONS = 290
+MIN_HEATMAP_POINTS = 60
 
 ROUTE_LETTERS = "ABCDE"
 
@@ -202,7 +203,9 @@ def _lookup_points(points: list[geo.Point]) -> list[geo.Point]:
 
 def _heatmap(routes: list[Route], departure: datetime, load_lbs: float, max_points: int) -> dict:
     points, spacing = corridor.corridor_points(routes, max_points)
-    series = open_meteo.hourly(points, departure, HEATMAP_HOURS)
+    # The heatmap is context: if the weather API is throttling, give up at once and
+    # leave the wait to the checkpoint forecasts the recommendation depends on.
+    series = open_meteo.hourly(points, departure, HEATMAP_HOURS, retries=0)
     start = open_meteo.floor_hour(departure)
     # levels[h][i] is (overall, wind, precipitation) for point i at hour h.
     levels = [
