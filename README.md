@@ -4,7 +4,9 @@ A React + Django app that helps a truck driver pick the safest of three routes. 
 
 **Live demo:** _link added after deployment_  ·  **Walkthrough:** _Loom link_
 
-![Denver to Salt Lake City: Route B is recommended because Route A meets Moderate wind across Wyoming](docs/screenshot.jpg)
+![Denver to Salt Lake City: three routes, the recommended one highlighted, with the corridor risk field and the 0-48 h forecast timeline](docs/screenshot.jpg)
+
+<img src="docs/screenshot-phone.jpg" alt="The same plan on a phone" width="260">
 
 ## What it does
 
@@ -13,7 +15,8 @@ A React + Django app that helps a truck driver pick the safest of three routes. 
 - **Weather checkpoints** every 10/25/50 miles, plus origin and destination. Each one uses the hourly forecast **interpolated to the truck's ETA** at that point.
 - **Risk** per checkpoint from the wind/rain/snow thresholds and the load rules, with the factor that drove it ("wind 47 mph with 42,000 lb load").
 - **Recommendation**, ranked by the brief's priorities, with a plain-English reason ("Fewer Severe miles than Route B (0 vs 25 mi)"). When the safest route is not the fastest, the reason states the cost ("It takes 3 h 47 min longer than Route A, the fastest option").
-- **Map:** all routes, risk-coloured checkpoints with hover details, ETAs, route summaries, and a **weather-risk heatmap along the trip corridor** with a **0–48 h forecast slider**. Truck markers show where each truck is at the selected hour.
+- **Map:** all routes on a terrain basemap, risk-coloured checkpoints (hover for details, click to pin), ETAs, route summaries, and a **weather-risk heatmap along the trip corridor** with a **0–48 h forecast timeline** and play button. A **Weather Risk / Precipitation / Wind** switch shows overall risk or a single factor. Truck markers show where each truck is at the selected hour, and a band on the timeline marks when the selected truck is on the road.
+- The default trip (Denver → Salt Lake City, across the windy I-80 corridor in Wyoming) is planned on arrival, so the first screen already shows results.
 
 ## How the logic works
 
@@ -26,7 +29,7 @@ A React + Django app that helps a truck driver pick the safest of three routes. 
 | Risk | Overall risk is the worst of wind (after load rules), rain and snow; see the table below. |
 | Risk miles | Each checkpoint stands for the road nearer to it than to its neighbours, so the miles by level add up exactly to the route length. |
 | Recommendation | Lexicographic: **No Travel miles → Severe miles → High miles → average risk (mile-weighted, 0–4) → travel time**. Miles are compared at 0.1 mi and average risk at 0.01, so rounding noise can't decide the winner. |
-| Heatmap | Up to 180 points along every route, at the centre line and ±30/±60 mi either side. A 48-hour forecast from the departure hour is scored with the same rules per point per hour. Each point is drawn as a soft disc in its own risk colour; see the note below on why this isn't a density heatmap. The frontend pre-builds one frame per hour, so moving the slider only swaps a GeoJSON source on the GPU. |
+| Heatmap | Up to 180 points along every route, at the centre line and ±30/±60 mi either side. Forecasts from the departure hour to +48 h (49 hourly frames) are scored with the same rules per point per hour, overall and per factor (wind after the load rules; the worse of rain and snow). Each point is drawn as a soft disc in its own risk colour; see the note below on why this isn't a density heatmap. The frontend pre-builds one frame per hour, so moving the slider only swaps a GeoJSON source on the GPU. |
 
 ### Risk rules (from the brief)
 
@@ -64,12 +67,13 @@ All rules live in [`backend/routing/domain/risk.py`](backend/routing/domain/risk
 ## Architecture
 
 ```
-frontend/  React 19 + TypeScript + Vite, MapLibre GL (WebGL map and heatmap)
+frontend/  React 19 + TypeScript + Vite, MapLibre GL (WebGL map and heatmap), no UI library
   App.tsx                   state: plan, selected route, forecast hour
   components/MapView.tsx    one map instance; sources updated with setData, never re-created
   components/TripForm.tsx   inputs, place search, 10/25/50 mi interval
   components/RouteCards.tsx summaries, risk-mile bars, recommendation reason
-  components/ForecastSlider.tsx 0–48 h slider, play/pause, trip window
+  components/ForecastSlider.tsx 0–48 h timeline, play/pause, trip window, legend
+  components/LayerSwitch.tsx  overall / precipitation / wind risk layers
 backend/   Django 5 + DRF, stateless (no database)
   routing/domain/           pure logic: risk rules, geometry, planner, corridor sampling
   routing/clients/          OSRM, Open-Meteo and Photon clients (retries, caching)
@@ -100,7 +104,7 @@ The response contains `routes[]` (geometry, per-vertex elapsed seconds, summary,
 
 ## Running locally
 
-Requires Python 3.10+ and Node 20+. No API keys are needed: OSRM, Open-Meteo, Photon and CARTO tiles are all free.
+Requires Python 3.10+ and Node 20+. No API keys are needed: OSRM, Open-Meteo, Photon, OpenFreeMap tiles and the AWS open terrain tiles are all free.
 
 ```bash
 # Backend
@@ -115,7 +119,7 @@ npm install
 npm run dev                           # http://localhost:5173, /api is proxied to Django
 ```
 
-Tests: `cd backend && pytest` (64 tests: every threshold boundary and load rule, the ranking and its explanation, mile attribution, corridor sampling, route naming, and the API with OSRM and Open-Meteo faked, including rate-limit and partial-failure paths).
+Tests: `cd backend && pytest` (65 tests: every threshold boundary and load rule, the ranking and its explanation, mile attribution, corridor sampling, route naming, and the API with OSRM and Open-Meteo faked, including rate-limit and partial-failure paths).
 
 ### Configuration
 

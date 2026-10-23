@@ -9,10 +9,10 @@ from .clients import open_meteo, osrm
 from .clients.http import UpstreamError
 from .domain import corridor, geo
 from .domain.planner import Checkpoint, Route, build_route, checkpoints_for, evaluate, recommend
-from .domain.risk import Conditions, Risk, risk_level
+from .domain.risk import Conditions, Risk, factor_levels
 
 ROUTE_COUNT = 3
-HEATMAP_HOURS = 48
+HEATMAP_HOURS = 49  # hourly frames for +0 h to +48 h inclusive
 MAX_DETOUR_RATIO = 1.6          # skip alternatives this much longer than the fastest
 SIMILARITY_THRESHOLD = 0.85     # share of grid cells two routes may share before one is a duplicate
 SIMPLIFY_TOLERANCE_DEG = 0.0005  # about 50 m, plenty for drawing
@@ -167,8 +167,9 @@ def _heatmap(routes: list[Route], departure: datetime, load_lbs: float) -> dict:
     points, spacing = corridor.corridor_points(routes)
     series = open_meteo.hourly(points, departure, HEATMAP_HOURS)
     start = open_meteo.floor_hour(departure)
+    # levels[h][i] is (overall, wind, precipitation) for point i at hour h.
     levels = [
-        [risk_level(s.wind_mph[h], s.rain_in[h], s.snow_in[h], load_lbs) for s in series]
+        [factor_levels(s.wind_mph[h], s.rain_in[h], s.snow_in[h], load_lbs) for s in series]
         for h in range(HEATMAP_HOURS)
     ]
     return {
@@ -176,7 +177,9 @@ def _heatmap(routes: list[Route], departure: datetime, load_lbs: float) -> dict:
         "hours": HEATMAP_HOURS,
         "spacing_miles": round(max(spacing, max(abs(o) for o in corridor.LATERAL_OFFSETS_MILES) / 2), 1),
         "points": [list(p) for p in points],
-        "levels": levels,
+        "levels": [[cell[0] for cell in row] for row in levels],
+        "wind_levels": [[cell[1] for cell in row] for row in levels],
+        "precip_levels": [[cell[2] for cell in row] for row in levels],
     }
 
 

@@ -2,16 +2,20 @@ import { useCallback, useRef, useState } from "react";
 import { planTrip } from "./api";
 import CheckpointTable from "./components/CheckpointTable";
 import ForecastSlider from "./components/ForecastSlider";
-import MapView from "./components/MapView";
-import RouteCards from "./components/RouteCards";
+import LayerSwitch from "./components/LayerSwitch";
+import MapView, { type WeatherLayer } from "./components/MapView";
+import RouteCards, { WhyCallout } from "./components/RouteCards";
 import TripForm from "./components/TripForm";
+import { Logo } from "./icons";
 import type { Checkpoint, TripPlan, TripRequest } from "./types";
 
 export default function App() {
   const [plan, setPlan] = useState<TripPlan | null>(null);
+  const [places, setPlaces] = useState<{ origin: string; destination: string } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hour, setHour] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [layer, setLayer] = useState<WeatherLayer>("risk");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focus, setFocus] = useState<{ checkpoint: Checkpoint; key: number } | null>(null);
@@ -27,6 +31,7 @@ export default function App() {
     try {
       const result = await planTrip(req, controller.signal);
       setPlan(result);
+      setPlaces({ origin: req.origin.label, destination: req.destination.label });
       setSelectedId(result.recommended_route_id);
       setHour(0);
     } catch (e) {
@@ -42,17 +47,22 @@ export default function App() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <header>
-          <h1>Weather-Aware Truck Routing</h1>
-          <p>Compare three routes by forecast weather risk at the truck's arrival time, then pick the safest.</p>
+        <header className="brand">
+          <Logo />
+          <div>
+            <h1>Weather-Aware Truck Routing</h1>
+            <p>Compare routes by weather risk at the truck's arrival time</p>
+          </div>
         </header>
+
         <TripForm loading={loading} onSubmit={submit} />
         {error && <div className="error" role="alert">{error}</div>}
+
         {plan && (
           <>
-            <RouteCards routes={plan.routes} selectedId={selectedId} reason={plan.recommendation_reason}
-              onSelect={setSelectedId} />
-            {selected && <CheckpointTable route={selected} onFocus={onFocus} />}
+            <RouteCards routes={plan.routes} selectedId={selectedId} onSelect={setSelectedId} />
+            <WhyCallout reason={plan.recommendation_reason} />
+            {selected && <CheckpointTable key={selected.id} route={selected} onFocus={onFocus} />}
             <details className="notes">
               <summary>How risk is calculated</summary>
               <ul>{plan.notes.map((n) => <li key={n}>{n}</li>)}</ul>
@@ -60,12 +70,14 @@ export default function App() {
           </>
         )}
         <footer>
-          Routes © OSRM · Weather © Open-Meteo · Places © Photon/OpenStreetMap · Map © CARTO, OpenStreetMap
+          Routes © OSRM · Weather © Open-Meteo · Places © Photon · Map © OpenFreeMap, OpenMapTiles, OpenStreetMap
         </footer>
       </aside>
 
       <main className="map-area">
-        <MapView plan={plan} selectedRouteId={selectedId} hour={hour} focus={focus} onSelectRoute={setSelectedId} />
+        <MapView plan={plan} places={places} selectedRouteId={selectedId} hour={hour} layer={layer} focus={focus}
+          onSelectRoute={setSelectedId} />
+        <LayerSwitch value={layer} onChange={setLayer} />
         {loading && (
           <div className="loading" role="status">
             <span className="spinner" aria-hidden />
@@ -77,10 +89,7 @@ export default function App() {
             playing={playing} onHour={setHour} onPlaying={setPlaying} />
         )}
         {plan && !plan.heatmap && (
-          <div className="empty-hint">Corridor heatmap unavailable: {plan.heatmap_error}</div>
-        )}
-        {!plan && !loading && (
-          <div className="empty-hint">Enter a trip and press <b>Find safest route</b>.</div>
+          <div className="map-note">Corridor forecast unavailable: {plan.heatmap_error}</div>
         )}
       </main>
     </div>

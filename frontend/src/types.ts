@@ -46,7 +46,12 @@ export interface Heatmap {
   /** Distance between neighbouring sample points; sizes the drawn risk discs. */
   spacing_miles: number;
   points: [number, number][];
+  /** levels[hour][point]: overall risk level 0-4 (Low … No Travel). */
   levels: number[][];
+  /** Wind risk after the load rules, same shape. */
+  wind_levels: number[][];
+  /** Worse of rain and snow risk, same shape. */
+  precip_levels: number[][];
 }
 
 export interface TripPlan {

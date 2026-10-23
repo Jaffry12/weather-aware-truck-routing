@@ -1,25 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowRightIcon, CalendarIcon, InfoIcon, SearchIcon, SwapIcon, TruckIcon } from "../icons";
+import { formatDeparture } from "../risk";
 import type { Place, TripRequest } from "../types";
 import PlaceInput from "./PlaceInput";
 
-const EXAMPLES: { name: string; origin: Place; destination: Place }[] = [
-  {
-    name: "Chicago → Denver",
-    origin: { label: "Chicago, Illinois, United States", lat: 41.8781, lon: -87.6298 },
-    destination: { label: "Denver, Colorado, United States", lat: 39.7392, lon: -104.9903 },
-  },
-  {
-    // I-80 across Wyoming is one of the windiest truck corridors in the US.
-    name: "Denver → Salt Lake City",
-    origin: { label: "Denver, Colorado, United States", lat: 39.7392, lon: -104.9903 },
-    destination: { label: "Salt Lake City, Utah, United States", lat: 40.7608, lon: -111.891 },
-  },
-  {
-    name: "Dallas → Atlanta",
-    origin: { label: "Dallas, Texas, United States", lat: 32.7767, lon: -96.797 },
-    destination: { label: "Atlanta, Georgia, United States", lat: 33.749, lon: -84.388 },
-  },
-];
+// I-80 across Wyoming is one of the windiest truck corridors in the US, so this
+// default trip usually shows the risk logic at work.
+const DEFAULT_ORIGIN: Place = { label: "Denver, Colorado, United States", lat: 39.7392, lon: -104.9903 };
+const DEFAULT_DESTINATION: Place = { label: "Salt Lake City, Utah, United States", lat: 40.7608, lon: -111.891 };
 
 const INTERVALS = [10, 25, 50] as const;
 
@@ -36,49 +24,102 @@ interface Props {
 }
 
 export default function TripForm({ loading, onSubmit }: Props) {
-  const [origin, setOrigin] = useState<Place | null>(EXAMPLES[0].origin);
-  const [destination, setDestination] = useState<Place | null>(EXAMPLES[0].destination);
+  const [origin, setOrigin] = useState<Place | null>(DEFAULT_ORIGIN);
+  const [destination, setDestination] = useState<Place | null>(DEFAULT_DESTINATION);
   const [departure, setDeparture] = useState(defaultDeparture);
   const [load, setLoad] = useState("42000");
+  const [loadFocused, setLoadFocused] = useState(false);
   const [interval, setIntervalMiles] = useState<10 | 25 | 50>(25);
   const [error, setError] = useState<string | null>(null);
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const request = (): TripRequest | string => {
     const loadLbs = Number(load);
-    if (!origin || !destination) return setError("Pick both places from the suggestions.");
-    if (!Number.isFinite(loadLbs) || loadLbs < 0) return setError("Enter the load weight in pounds.");
-    if (!departure) return setError("Choose a departure time.");
-    setError(null);
-    onSubmit({
+    if (!origin || !destination) return "Pick both places from the suggestions.";
+    if (!load || !Number.isFinite(loadLbs)) return "Enter the load weight in pounds.";
+    if (!departure) return "Choose a departure time.";
+    return {
       origin,
       destination,
       departure: new Date(departure).toISOString(),
       load_lbs: Math.round(loadLbs),
       interval_miles: interval,
-    });
+    };
+  };
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const req = request();
+    if (typeof req === "string") return setError(req);
+    setError(null);
+    onSubmit(req);
+  };
+
+  // Plan the default trip once on arrival, so the first screen shows real results.
+  const autoPlanned = useRef(false);
+  useEffect(() => {
+    if (autoPlanned.current) return;
+    autoPlanned.current = true;
+    const req = request();
+    if (typeof req !== "string") onSubmit(req);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once with the defaults
+  }, []);
+
+  const swap = () => {
+    setOrigin(destination);
+    setDestination(origin);
   };
 
   return (
-    <form className="trip-form" onSubmit={submit}>
-      <PlaceInput label="Origin" value={origin} onChange={setOrigin} placeholder="City, address or depot" />
-      <PlaceInput label="Destination" value={destination} onChange={setDestination} placeholder="City, address or depot" />
+    <form className="card trip-form" onSubmit={submit}>
+      <div className="od-row">
+        <PlaceInput label="Origin" value={origin} onChange={setOrigin} placeholder="City or address" />
+        <button type="button" className="swap" onClick={swap} aria-label="Swap origin and destination"
+          title="Swap origin and destination">
+          <SwapIcon size={18} />
+        </button>
+        <PlaceInput label="Destination" value={destination} onChange={setDestination} placeholder="City or address"
+          align="end" />
+      </div>
 
-      <div className="row">
+      <div className="two-col">
         <div className="field">
           <label htmlFor="departure">Departure</label>
-          <input id="departure" type="datetime-local" value={departure} onChange={(e) => setDeparture(e.target.value)} />
+          <div className="input-shell">
+            <CalendarIcon className="input-icon" />
+            <span className="input-text">{departure ? formatDeparture(departure) : "Choose a time"}</span>
+            {/* The native picker sits invisibly on top of the formatted text. */}
+            <input id="departure" type="datetime-local" className="ghost-input" value={departure}
+              onChange={(e) => setDeparture(e.target.value)}
+              onClick={(e) => {
+                try {
+                  e.currentTarget.showPicker();
+                } catch {
+                  // Older browsers: the input still accepts typing.
+                }
+              }} />
+          </div>
         </div>
         <div className="field">
-          <label htmlFor="load">Load weight (lb)</label>
-          <input id="load" type="number" min={0} max={200000} step={500} inputMode="numeric" value={load}
-            onChange={(e) => setLoad(e.target.value)} />
+          <label htmlFor="load">Load weight</label>
+          <div className="input-shell">
+            <TruckIcon className="input-icon" />
+            <input id="load" inputMode="numeric" autoComplete="off"
+              value={loadFocused || !load ? load : `${Number(load).toLocaleString("en-US")} lb`}
+              onFocus={() => setLoadFocused(true)}
+              onBlur={() => setLoadFocused(false)}
+              onChange={(e) => setLoad(e.target.value.replace(/\D/g, "").slice(0, 6))} />
+          </div>
         </div>
       </div>
 
-      <div className="field">
-        <span className="label">Weather checkpoints every</span>
-        <div className="segmented" role="radiogroup" aria-label="Checkpoint interval">
+      <div className="interval-row">
+        <span className="label" id="interval-label">
+          Checkpoints every
+          <span className="info" title="Weather is checked at each checkpoint for the moment the truck gets there.">
+            <InfoIcon size={15} />
+          </span>
+        </span>
+        <div className="segmented" role="radiogroup" aria-labelledby="interval-label">
           {INTERVALS.map((miles) => (
             <button key={miles} type="button" role="radio" aria-checked={interval === miles}
               className={interval === miles ? "on" : ""} onClick={() => setIntervalMiles(miles)}>
@@ -91,20 +132,10 @@ export default function TripForm({ loading, onSubmit }: Props) {
       {error && <p className="form-error">{error}</p>}
 
       <button className="primary" type="submit" disabled={loading}>
+        <SearchIcon size={18} />
         {loading ? "Planning…" : "Find safest route"}
+        {!loading && <ArrowRightIcon size={18} />}
       </button>
-
-      <div className="examples">
-        <span>Try:</span>
-        {EXAMPLES.map((ex) => (
-          <button key={ex.name} type="button" className="link" onClick={() => {
-            setOrigin(ex.origin);
-            setDestination(ex.destination);
-          }}>
-            {ex.name}
-          </button>
-        ))}
-      </div>
     </form>
   );
 }

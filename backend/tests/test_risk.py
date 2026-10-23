@@ -1,6 +1,7 @@
 import pytest
 
-from routing.domain.risk import Conditions, Risk, assess, classify_rain, classify_snow, classify_wind, risk_level
+from routing.domain.risk import (Conditions, Risk, assess, classify_rain, classify_snow, classify_wind, factor_levels,
+                                 risk_level)
 
 L, M, H, S, NT = Risk.LOW, Risk.MODERATE, Risk.HIGH, Risk.SEVERE, Risk.NO_TRAVEL
 
@@ -56,3 +57,10 @@ def test_fast_path_matches_full_assessment():
         for rain in (0, 0.2, 0.6):
             for load in (20_000, 45_000):
                 assert risk_level(wind, rain, 0, load) == int(assess(Conditions(wind, rain, 0), load).level)
+
+
+def test_factor_levels_split_wind_and_precipitation():
+    # 47 mph with 35,000 lb is No Travel by the load rules; 0.3 in/hr rain is High.
+    assert factor_levels(47, 0.3, 0, 35_000) == (int(Risk.NO_TRAVEL), int(Risk.NO_TRAVEL), int(Risk.HIGH))
+    # Snow drives the precipitation layer when it is worse than rain.
+    assert factor_levels(10, 0.05, 2.5, 20_000) == (int(Risk.SEVERE), int(Risk.LOW), int(Risk.SEVERE))

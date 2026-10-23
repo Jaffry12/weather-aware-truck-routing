@@ -61,14 +61,27 @@ export function labelPoints(routes: RouteOption[]): [number, number][] {
   });
 }
 
-/** One GeoJSON FeatureCollection per forecast hour, built once per plan. */
+/**
+ * One GeoJSON FeatureCollection per forecast hour, built once per plan. Each
+ * point carries all three layers (r = overall, w = wind, p = precipitation), so
+ * switching layers only changes which property the map paints.
+ */
 export function heatmapFrames(heatmap: Heatmap): GeoJSON.FeatureCollection<GeoJSON.Point>[] {
-  return heatmap.levels.map((row) => ({
+  return heatmap.levels.map((row, h) => ({
     type: "FeatureCollection",
     features: heatmap.points.map((coordinates, i) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates },
-      properties: { w: row[i] },
+      properties: { r: row[i], w: heatmap.wind_levels[h][i], p: heatmap.precip_levels[h][i] },
     })),
   }));
+}
+
+/** True when the truck is heading west at `seconds`, so its icon can face the way it drives. */
+export function headingWest(route: RouteOption, seconds: number): boolean {
+  const total = route.geometry_seconds[route.geometry_seconds.length - 1];
+  const t = Math.min(Math.max(seconds, 0), total);
+  const a = positionAt(route, Math.max(0, t - 300));
+  const b = positionAt(route, Math.min(total, t + 300));
+  return b[0] < a[0];
 }

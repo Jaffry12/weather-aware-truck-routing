@@ -1,5 +1,8 @@
-import { RISK_COLORS, formatDayTime } from "../risk";
+import { useState } from "react";
+import { RISK_TEXT, RISK_TINTS, formatDayTime } from "../risk";
 import type { Checkpoint, RouteOption } from "../types";
+
+const PREVIEW_ROWS = 6;
 
 interface Props {
   route: RouteOption;
@@ -7,34 +10,46 @@ interface Props {
 }
 
 export default function CheckpointTable({ route, onFocus }: Props) {
+  const [expanded, setExpanded] = useState(false);
+  const rows = expanded ? route.checkpoints : route.checkpoints.slice(0, PREVIEW_ROWS);
+
   return (
-    <section className="checkpoints" aria-label={`${route.name} checkpoints`}>
-      <h3>{route.name} checkpoints <span>({route.checkpoints.length})</span></h3>
-      <div className="table-wrap">
+    <section className="card checkpoints" aria-label={`${route.name} checkpoints`}>
+      <div className="section-head">
+        <h2>{route.name} checkpoints</h2>
+        {route.checkpoints.length > PREVIEW_ROWS && (
+          <button type="button" className="link" onClick={() => setExpanded(!expanded)}>
+            {expanded ? "Show less" : `View all ${route.checkpoints.length}`}
+          </button>
+        )}
+      </div>
+      <div className={`table-wrap${expanded ? " expanded" : ""}`}>
         <table>
           <thead>
             <tr>
               <th>Mile</th>
               <th>ETA</th>
               <th>Wind</th>
-              <th>Rain</th>
-              <th>Snow</th>
+              <th title="inches per hour">Rain</th>
+              <th title="inches per hour">Snow</th>
               <th>Risk</th>
             </tr>
           </thead>
           <tbody>
-            {route.checkpoints.map((cp) => (
+            {rows.map((cp) => (
               <tr key={cp.mile} onClick={() => onFocus(cp)} tabIndex={0}
                 onKeyDown={(e) => e.key === "Enter" && onFocus(cp)}
-                title={cp.drivers.length ? `Driven by ${cp.drivers.join(", ")}` : undefined}>
+                title={cp.drivers.length ? `Driven by ${cp.drivers.join(", ")}. Click to show on the map.` :
+                  "Click to show on the map."}>
                 <td>{cp.mile.toFixed(0)}</td>
                 <td>{formatDayTime(cp.eta)}</td>
                 <td>{cp.wind_mph.toFixed(0)} mph</td>
                 <td>{cp.rain_in_hr.toFixed(2)}</td>
                 <td>{cp.snow_in_hr.toFixed(2)}</td>
                 <td>
-                  <span className="chip" style={{ background: RISK_COLORS[cp.risk] }}>
-                    {cp.risk}{cp.load_escalated ? " ⚖" : ""}
+                  <span className="chip" style={{ background: RISK_TINTS[cp.risk], color: RISK_TEXT[cp.risk] }}>
+                    {cp.risk}
+                    {cp.load_escalated && <span title="Raised by the load-weight rules"> ⚖</span>}
                   </span>
                 </td>
               </tr>
@@ -42,7 +57,6 @@ export default function CheckpointTable({ route, onFocus }: Props) {
           </tbody>
         </table>
       </div>
-      <p className="hint">Rain and snow in inches per hour. ⚖ = raised by the load-weight rules. Click a row to find it on the map.</p>
     </section>
   );
 }

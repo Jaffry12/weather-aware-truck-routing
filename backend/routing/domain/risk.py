@@ -137,5 +137,11 @@ def assess(conditions: Conditions, load_lbs: float) -> Assessment:
 
 def risk_level(wind_mph: float, rain_in_hr: float, snow_in_hr: float, load_lbs: float) -> int:
     """Fast path for the heatmap grid, where only the level is needed."""
+    return factor_levels(wind_mph, rain_in_hr, snow_in_hr, load_lbs)[0]
+
+
+def factor_levels(wind_mph: float, rain_in_hr: float, snow_in_hr: float, load_lbs: float) -> tuple[int, int, int]:
+    """(overall, wind after load rules, precipitation) levels, for the map's layer switcher."""
     wind = apply_load_rules(wind_mph, load_lbs, classify_wind(wind_mph))
-    return int(max(wind, classify_rain(rain_in_hr), classify_snow(snow_in_hr)))
+    precip = max(classify_rain(rain_in_hr), classify_snow(snow_in_hr))
+    return int(max(wind, precip)), int(wind), int(precip)

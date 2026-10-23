@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { searchPlaces } from "../api";
+import { PinIcon } from "../icons";
+import { shortPlace } from "../risk";
 import type { Place } from "../types";
 
 interface Props {
@@ -7,23 +9,25 @@ interface Props {
   value: Place | null;
   onChange: (place: Place | null) => void;
   placeholder?: string;
+  /** Which edge the suggestion list lines up with (the right-hand field opens leftwards). */
+  align?: "start" | "end";
 }
 
 /** Text input with debounced place search and keyboard-navigable suggestions. */
-export default function PlaceInput({ label, value, onChange, placeholder }: Props) {
+export default function PlaceInput({ label, value, onChange, placeholder, align = "start" }: Props) {
   const id = useId();
-  const [text, setText] = useState(value?.label ?? "");
+  const [text, setText] = useState(value ? shortPlace(value.label) : "");
   const [results, setResults] = useState<Place[]>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const [loading, setLoading] = useState(false);
   const blurTimer = useRef<number>(undefined);
 
-  useEffect(() => setText(value?.label ?? ""), [value]);
+  useEffect(() => setText(value ? shortPlace(value.label) : ""), [value]);
 
   useEffect(() => {
     const query = text.trim();
-    if (!open || query.length < 3 || query === value?.label) {
+    if (!open || query.length < 3 || (value && query === shortPlace(value.label))) {
       setResults([]);
       return;
     }
@@ -44,11 +48,11 @@ export default function PlaceInput({ label, value, onChange, placeholder }: Prop
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [text, open, value?.label]);
+  }, [text, open, value]);
 
   const choose = (place: Place) => {
     onChange(place);
-    setText(place.label);
+    setText(shortPlace(place.label));
     setOpen(false);
     setResults([]);
   };
@@ -72,26 +76,30 @@ export default function PlaceInput({ label, value, onChange, placeholder }: Prop
   return (
     <div className="field place-input">
       <label htmlFor={id}>{label}</label>
-      <input
-        id={id}
-        value={text}
-        placeholder={placeholder}
-        autoComplete="off"
-        role="combobox"
-        aria-expanded={open && results.length > 0}
-        aria-controls={`${id}-list`}
-        onChange={(e) => {
-          setText(e.target.value);
-          setOpen(true);
-          if (value) onChange(null);
-        }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => (blurTimer.current = window.setTimeout(() => setOpen(false), 150))}
-        onKeyDown={onKeyDown}
-      />
-      {loading && <span className="input-spinner" aria-hidden />}
+      <div className="input-shell">
+        <PinIcon className="input-icon" />
+        <input
+          id={id}
+          value={text}
+          placeholder={placeholder}
+          autoComplete="off"
+          role="combobox"
+          aria-expanded={open && results.length > 0}
+          aria-controls={`${id}-list`}
+          onChange={(e) => {
+            setText(e.target.value);
+            setOpen(true);
+            if (value) onChange(null);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => (blurTimer.current = window.setTimeout(() => setOpen(false), 150))}
+          onKeyDown={onKeyDown}
+          title={value?.label}
+        />
+        {loading && <span className="input-spinner" aria-hidden />}
+      </div>
       {open && results.length > 0 && (
-        <ul id={`${id}-list`} className="suggestions" role="listbox">
+        <ul id={`${id}-list`} className={`suggestions ${align}`} role="listbox">
           {results.map((place, i) => (
             <li
               key={`${place.label}-${i}`}

@@ -94,8 +94,12 @@ def test_plan_returns_three_routes_with_checkpoints_and_heatmap(fake_upstreams):
     # 40 mph with a 42,000 lb load escalates to Severe.
     assert any(c["risk"] == "Severe" and c["load_escalated"] for c in cps)
     heat = data["heatmap"]
-    assert heat["hours"] == 48 and len(heat["levels"]) == 48
-    assert all(len(row) == len(heat["points"]) for row in heat["levels"])
+    assert heat["hours"] == 49  # +0 h to +48 h
+    for key in ("levels", "wind_levels", "precip_levels"):
+        assert len(heat[key]) == 49
+        assert all(len(row) == len(heat["points"]) for row in heat[key])
+    # Overall risk is the worse of the wind and precipitation layers.
+    assert heat["levels"][0] == [max(w, p) for w, p in zip(heat["wind_levels"][0], heat["precip_levels"][0])]
 
 
 def test_interval_changes_checkpoint_density(fake_upstreams):

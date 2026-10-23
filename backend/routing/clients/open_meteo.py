@@ -27,7 +27,7 @@ CHUNK_SIZE = 100
 FORECAST_TTL_SECONDS = 20 * 60
 MAX_FORECAST_DAYS = 15
 SNAP_DEGREES = 0.05
-MIN_WINDOW_HOURS = 48  # every lookup covers the heatmap's window, so all callers share cache entries
+MIN_WINDOW_HOURS = 49  # every lookup covers the heatmap's window, so all callers share cache entries
 
 
 @dataclass(frozen=True)
