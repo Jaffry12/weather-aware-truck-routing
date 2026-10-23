@@ -6,7 +6,7 @@ A React + Django app that helps a truck driver pick the safest of three routes. 
 
 ![Denver to Salt Lake City: three routes, the recommended one highlighted, with the corridor risk field and the 0-48 h forecast timeline](docs/screenshot.jpg)
 
-<img src="docs/screenshot-phone.jpg" alt="The same plan on a phone" width="260">
+<img src="docs/screenshot-dark.jpg" alt="Dark theme" width="49%"> <img src="docs/screenshot-phone.jpg" alt="Phone, light theme" width="24%"> <img src="docs/screenshot-phone-dark.jpg" alt="Phone, dark theme" width="24%">
 
 ## What it does
 
@@ -16,6 +16,7 @@ A React + Django app that helps a truck driver pick the safest of three routes. 
 - **Risk** per checkpoint from the wind/rain/snow thresholds and the load rules, with the factor that drove it ("wind 47 mph with 42,000 lb load").
 - **Recommendation**, ranked by the brief's priorities, with a plain-English reason ("Fewer Severe miles than Route B (0 vs 25 mi)"). When the safest route is not the fastest, the reason states the cost ("It takes 3 h 47 min longer than Route A, the fastest option").
 - **Map:** all routes on a terrain basemap, risk-coloured checkpoints (hover for details, click to pin), ETAs, route summaries, and a **weather-risk heatmap along the trip corridor** with a **0–48 h forecast timeline** and play button. A **Weather Risk / Precipitation / Wind** switch shows overall risk or a single factor. Truck markers show where each truck is at the selected hour, and a band on the timeline marks when the selected truck is on the road.
+- **Light and dark themes.** The app follows the device setting, and a toggle in the header overrides it (remembered in the browser). The map swaps to a dark basemap without losing the plan, layer or camera. The layout works on phones too.
 - The default trip (Denver → Salt Lake City, across the windy I-80 corridor in Wyoming) is planned on arrival, so the first screen already shows results.
 
 ## How the logic works

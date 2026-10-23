@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { RISK_TEXT, RISK_TINTS, formatDayTime } from "../risk";
+import { formatDayTime } from "../risk";
 import type { Checkpoint, RouteOption } from "../types";
 
 const PREVIEW_ROWS = 6;
@@ -47,7 +47,7 @@ export default function CheckpointTable({ route, onFocus }: Props) {
                 <td>{cp.rain_in_hr.toFixed(2)}</td>
                 <td>{cp.snow_in_hr.toFixed(2)}</td>
                 <td>
-                  <span className="chip" style={{ background: RISK_TINTS[cp.risk], color: RISK_TEXT[cp.risk] }}>
+                  <span className={`chip risk-chip-${cp.risk_level}`}>
                     {cp.risk}
                     {cp.load_escalated && <span title="Raised by the load-weight rules"> ⚖</span>}
                   </span>

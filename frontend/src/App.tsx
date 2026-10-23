@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { planTrip } from "./api";
 import CheckpointTable from "./components/CheckpointTable";
 import ForecastSlider from "./components/ForecastSlider";
@@ -6,7 +6,8 @@ import LayerSwitch from "./components/LayerSwitch";
 import MapView, { type WeatherLayer } from "./components/MapView";
 import RouteCards, { WhyCallout } from "./components/RouteCards";
 import TripForm from "./components/TripForm";
-import { Logo } from "./icons";
+import { Logo, MoonIcon, SunIcon } from "./icons";
+import { type Theme, applyTheme, initialTheme, savedTheme, saveTheme } from "./theme";
 import type { Checkpoint, TripPlan, TripRequest } from "./types";
 
 export default function App() {
@@ -16,6 +17,7 @@ export default function App() {
   const [hour, setHour] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [layer, setLayer] = useState<WeatherLayer>("risk");
+  const [theme, setTheme] = useState<Theme>(initialTheme);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focus, setFocus] = useState<{ checkpoint: Checkpoint; key: number } | null>(null);
@@ -41,6 +43,24 @@ export default function App() {
     }
   }, []);
 
+  useEffect(() => applyTheme(theme), [theme]);
+
+  // Follow the system setting until the user picks a theme themselves.
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const follow = (e: MediaQueryListEvent) => {
+      if (!savedTheme()) setTheme(e.matches ? "dark" : "light");
+    };
+    query.addEventListener("change", follow);
+    return () => query.removeEventListener("change", follow);
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    saveTheme(next);
+    setTheme(next);
+  };
+
   const selected = plan?.routes.find((r) => r.id === selectedId);
   const onFocus = useCallback((checkpoint: Checkpoint) => setFocus({ checkpoint, key: Date.now() }), []);
 
@@ -49,10 +69,15 @@ export default function App() {
       <aside className="sidebar">
         <header className="brand">
           <Logo />
-          <div>
+          <div className="brand-text">
             <h1>Weather-Aware Truck Routing</h1>
             <p>Compare routes by weather risk at the truck's arrival time</p>
           </div>
+          <button type="button" className="theme-toggle" onClick={toggleTheme}
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            title={theme === "dark" ? "Light mode" : "Dark mode"}>
+            {theme === "dark" ? <SunIcon size={18} /> : <MoonIcon size={18} />}
+          </button>
         </header>
 
         <TripForm loading={loading} onSubmit={submit} />
@@ -75,8 +100,8 @@ export default function App() {
       </aside>
 
       <main className="map-area">
-        <MapView plan={plan} places={places} selectedRouteId={selectedId} hour={hour} layer={layer} focus={focus}
-          onSelectRoute={setSelectedId} />
+        <MapView plan={plan} places={places} selectedRouteId={selectedId} hour={hour} layer={layer} theme={theme}
+          focus={focus} onSelectRoute={setSelectedId} />
         <LayerSwitch value={layer} onChange={setLayer} />
         {loading && (
           <div className="loading" role="status">

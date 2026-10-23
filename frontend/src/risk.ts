@@ -11,23 +11,7 @@ export const RISK_COLORS: Record<RiskLabel, string> = {
   "No Travel": "#7e22ce",
 };
 
-/** Darker shades of the same hues, readable as text on white. */
-export const RISK_TEXT: Record<RiskLabel, string> = {
-  Low: "#15803d",
-  Moderate: "#ca8a04",
-  High: "#ea580c",
-  Severe: "#dc2626",
-  "No Travel": "#7e22ce",
-};
-
-/** Pale backgrounds for risk chips. */
-export const RISK_TINTS: Record<RiskLabel, string> = {
-  Low: "#dcfce7",
-  Moderate: "#fef9c3",
-  High: "#ffedd5",
-  Severe: "#fee2e2",
-  "No Travel": "#f3e8ff",
-};
+// Text and chip shades for each level live in index.css, per theme.
 
 export const riskLabel = (level: number): RiskLabel => RISK_LEVELS[level] ?? "Low";
 

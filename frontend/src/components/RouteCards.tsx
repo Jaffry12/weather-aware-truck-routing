@@ -1,5 +1,5 @@
 import { ShieldCheckIcon, StarIcon } from "../icons";
-import { RISK_COLORS, RISK_LEVELS, RISK_TEXT, formatDayTime, formatDuration, formatMiles, riskLabel } from "../risk";
+import { RISK_COLORS, RISK_LEVELS, formatDayTime, formatDuration, formatMiles, riskLabel } from "../risk";
 import type { RouteOption } from "../types";
 
 interface Props {
@@ -37,7 +37,8 @@ export default function RouteCards({ routes, selectedId, onSelect }: Props) {
                   </span>
                   {worst && (
                     <span className="route-worst">
-                      <span style={{ color: RISK_TEXT[worst] }}>{worst}</span> {formatMiles(r.miles_by_level[worst])}
+                      <span className={`risk-text-${RISK_LEVELS.indexOf(worst)}`}>{worst}</span>{" "}
+                      {formatMiles(r.miles_by_level[worst])}
                     </span>
                   )}
                 </span>
