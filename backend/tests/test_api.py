@@ -15,8 +15,10 @@ ST_LOUIS = {"lat": 38.627, "lon": -90.1994, "label": "St. Louis"}
 
 
 @pytest.fixture(autouse=True)
-def _clear_cache():
+def _clear_cache(monkeypatch):
     cache.clear()
+    from routing.clients import open_meteo
+    monkeypatch.setattr(open_meteo, "RATE_LIMIT_WAIT_SECONDS", 0)
 
 
 def _line(lon1, lat1, lon2, lat2, bend=0.0, n=40):
@@ -225,3 +227,20 @@ def test_geocode_returns_labelled_places_without_duplicates():
 def test_geocode_ignores_one_letter_queries():
     resp = APIClient().get("/api/geocode", {"q": "d"})
     assert resp.status_code == 200 and resp.json() == {"results": []}
+
+
+def test_weather_rate_limit_is_waited_out_and_retried():
+    calls = {"meteo": 0}
+
+    def flaky_meteo(request):
+        calls["meteo"] += 1
+        if calls["meteo"] == 1:
+            return 429, {}, json.dumps({"error": True, "reason": "Minutely API request limit exceeded."})
+        return _meteo_callback(request)
+
+    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+        rsps.add_callback(responses.GET, re.compile(r"https://router\.project-osrm\.org/.*"), callback=_osrm_callback)
+        rsps.add_callback(responses.GET, re.compile(r"https://api\.open-meteo\.com/.*"), callback=flaky_meteo)
+        resp = APIClient().post("/api/plan", _plan_body(), format="json")
+    assert resp.status_code == 200
+    assert resp.json()["heatmap"] is not None and calls["meteo"] >= 3

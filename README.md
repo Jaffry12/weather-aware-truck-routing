@@ -43,7 +43,7 @@ Every line of the brief, where it is implemented, and how it is checked.
 
 | Step | Detail |
 |---|---|
-| Routes | OSRM (`/route/v1/driving`, `alternatives=3`), then up to 8 forced detours. Near-duplicates (more than 85% of map cells shared) and routes over 1.6 times the shortest are dropped; if that leaves fewer than three, one relaxed pass (97%, 2×) runs so a usable third option still appears. Unroutable trips (an island, a point far from roads) get a clear 422 message. |
+| Routes | OSRM (`/route/v1/driving`, `alternatives=3`), then up to 8 forced detours (both sides of the route at once). Near-duplicates (more than 85% of map cells shared) and routes over 1.6 times the shortest are dropped; if that leaves fewer than three, one relaxed pass (97%, 2×) runs so a usable third option still appears. Unroutable trips (an island, a point far from roads) get a clear 422 message. |
 | Truck travel time | OSRM's per-segment durations, **capped at 65 mph** so car-speed estimates don't make truck ETAs optimistic. |
 | Checkpoints | Every N miles along the polyline, plus the destination. ETA = departure + cumulative truck time at that distance. |
 | Weather | Open-Meteo hourly `wind_speed_10m` (mph), `rain` and `snowfall` (in/hr), linearly interpolated to each ETA. Each checkpoint is looked up at its own location (0.05° grid, about 3 mi); all checkpoints of all routes go out in a few batched requests. |
@@ -79,8 +79,8 @@ A classic density heatmap (MapLibre's `heatmap` layer) colours by *how much weig
 Open-Meteo's free tier allows 600 calls a minute and counts every location as a call, so the weather client is built around a budget:
 
 - Forecasts are cached **per location** for 20 minutes, with coordinates snapped to a 0.05° grid (about 3 mi, finer than the weather models). Re-planning with another load or interval, or another trip through the same area, reuses them.
-- A plan uses at most 450 locations. Checkpoints come first: each gets its own lookup, up to 360. The corridor heatmap gets the rest (80–180 points). For example, Chicago → Denver at 10-mile spacing (327 checkpoints) still samples each checkpoint on its own. Only coast-to-coast trips at 10-mile spacing go over, and then neighbouring checkpoints share a coarser grid cell; ETAs and risk are still computed per checkpoint.
-- If the weather API throttles, the API returns **503 with `Retry-After: 60`** and a clear message instead of hanging; an outage returns 502. If only the heatmap fails, the routes and recommendation are still returned.
+- A plan uses at most 400 locations. Checkpoints come first: each gets its own lookup, up to 320. The corridor heatmap gets the rest (80–180 points). For example, Chicago → Denver at 10-mile spacing (327 checkpoints) still samples each checkpoint on its own. Only coast-to-coast trips at 10-mile spacing go over, and then neighbouring checkpoints share a coarser grid cell; ETAs and risk are still computed per checkpoint.
+- If the weather API throttles (its limit is per minute, and a hosted app may share an IP with others), the client waits 12 s and retries, up to three times, inside the 60 s serverless limit. Each batch is cached as soon as it arrives, so retries never re-fetch. If it is still throttled, the API returns **503 with `Retry-After: 60`** and a clear message instead of hanging; an outage returns 502. If only the heatmap fails, the routes and recommendation are still returned.
 - The frontend gives up after 70 s (the serverless limit is 60 s) with a readable message.
 
 All rules live in [`backend/routing/domain/risk.py`](backend/routing/domain/risk.py) and are covered boundary by boundary in [`tests/test_risk.py`](backend/tests/test_risk.py).
@@ -141,7 +141,7 @@ npm install
 npm run dev                           # http://localhost:5173, /api is proxied to Django
 ```
 
-Tests: `cd backend && pytest` (71 tests: every threshold boundary and load rule, the ranking and its explanation, mile attribution, corridor sampling, route naming, the three-route guarantee, per-checkpoint weather lookups, place search, and the API with OSRM and Open-Meteo faked, including unroutable, outage, rate-limit and partial-failure paths).
+Tests: `cd backend && pytest` (72 tests: every threshold boundary and load rule, the ranking and its explanation, mile attribution, corridor sampling, route naming, the three-route guarantee, per-checkpoint weather lookups, place search, and the API with OSRM and Open-Meteo faked, including unroutable, outage, rate-limit retry and partial-failure paths).
 
 ### Configuration
 

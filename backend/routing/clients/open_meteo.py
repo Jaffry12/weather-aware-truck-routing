@@ -13,6 +13,7 @@ trip across the same area, only asks for locations not seen recently.
 
 from __future__ import annotations
 
+import time as clock
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -21,12 +22,16 @@ from datetime import date, datetime, time, timedelta, timezone
 from django.conf import settings
 from django.core.cache import cache
 
-from .http import UpstreamError, get_json
+from .http import RateLimited, UpstreamError, get_json
 
 CHUNK_SIZE = 100
 FORECAST_TTL_SECONDS = 20 * 60
 MAX_FORECAST_DAYS = 15
 SNAP_DEGREES = 0.05
+# The free tier's limit is per minute, so on a 429 a short wait usually clears it.
+# Three waits fit comfortably inside the 60 s serverless limit.
+RATE_LIMIT_RETRIES = 3
+RATE_LIMIT_WAIT_SECONDS = 12.0
 MIN_WINDOW_HOURS = 49  # every lookup covers the heatmap's window, so all callers share cache entries
 
 
@@ -85,16 +90,32 @@ def hourly(points: Sequence[tuple[float, float]], start: datetime, hours: int) -
     missing = [cell for cell, key in keys.items() if key not in found]
     if missing:
         chunks = [missing[i:i + CHUNK_SIZE] for i in range(0, len(missing), CHUNK_SIZE)]
+
+        def load(chunk: list[tuple[float, float]]) -> dict[str, HourlySeries]:
+            fresh = {keys[cell]: series for cell, series in zip(chunk, _fetch_with_retry(chunk, first_day, last_day))}
+            # Cached per chunk as it arrives, so a retried plan never re-asks for these.
+            cache.set_many(fresh, FORECAST_TTL_SECONDS)
+            return fresh
+
         with ThreadPoolExecutor(max_workers=min(6, len(chunks))) as pool:
-            fetched = [s for chunk in pool.map(lambda c: _fetch_chunk(c, first_day, last_day), chunks) for s in chunk]
-        fresh = {keys[cell]: series for cell, series in zip(missing, fetched)}
-        cache.set_many(fresh, FORECAST_TTL_SECONDS)
-        found.update(fresh)
+            for fresh in pool.map(load, chunks):
+                found.update(fresh)
     return [found[keys[cell]].window(start, hours) for cell in cells]
 
 
 def _cache_key(cell: tuple[float, float], first_day: date, last_day: date) -> str:
     return f"openmeteo:{cell[0]},{cell[1]}:{first_day.isoformat()}:{last_day.isoformat()}"
+
+
+def _fetch_with_retry(points: Sequence[tuple[float, float]], first_day: date, last_day: date) -> list[HourlySeries]:
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        try:
+            return _fetch_chunk(points, first_day, last_day)
+        except RateLimited:
+            if attempt == RATE_LIMIT_RETRIES:
+                raise
+            clock.sleep(RATE_LIMIT_WAIT_SECONDS)
+    raise AssertionError("unreachable")
 
 
 def _fetch_chunk(points: Sequence[tuple[float, float]], first_day: date, last_day: date) -> list[HourlySeries]:
