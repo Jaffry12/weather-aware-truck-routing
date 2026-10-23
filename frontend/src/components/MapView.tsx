@@ -158,6 +158,45 @@ function addOverlays(map: maplibregl.Map, theme: Theme) {
   });
 }
 
+const COMPARISONS = new Set(["<", "<=", ">", ">="]);
+
+/**
+ * Make a comparison against a missing feature property simply false.
+ * MapLibre already treats it as false, but logs a type warning per feature first.
+ */
+function guardComparisons(expr: unknown): unknown {
+  if (!Array.isArray(expr)) return expr;
+  const [op, left, right] = expr;
+  if (typeof op === "string" && COMPARISONS.has(op) && expr.length === 3) {
+    const leftIsGet = Array.isArray(left) && left[0] === "get";
+    const rightIsGet = Array.isArray(right) && right[0] === "get";
+    // A value that makes the comparison fail: huge for "x < n", tiny for "x > n" (mirrored on the right).
+    const fallback = (lessThan: boolean) => (lessThan ? 1e9 : -1e9);
+    return [
+      op,
+      leftIsGet ? ["coalesce", left, fallback(op.startsWith("<"))] : guardComparisons(left),
+      rightIsGet ? ["coalesce", right, fallback(op.startsWith(">"))] : guardComparisons(right),
+    ];
+  }
+  return expr.map(guardComparisons);
+}
+
+/** Tidy third-party basemap expressions that read properties some features lack. */
+function quietBasemapWarnings(map: maplibregl.Map) {
+  for (const layer of map.getStyle().layers) {
+    if (!("filter" in layer) || !layer.filter) continue;
+    const guarded = guardComparisons(layer.filter);
+    if (JSON.stringify(guarded) !== JSON.stringify(layer.filter)) {
+      map.setFilter(layer.id, guarded as maplibregl.FilterSpecification);
+    }
+  }
+  // Liberty's 3D buildings read heights that some buildings lack.
+  if (map.getLayer("building-3d")) {
+    map.setPaintProperty("building-3d", "fill-extrusion-height", ["coalesce", ["get", "render_height"], 0]);
+    map.setPaintProperty("building-3d", "fill-extrusion-base", ["coalesce", ["get", "render_min_height"], 0]);
+  }
+}
+
 /** Light/dark switch, built as a map control so it stacks under the zoom buttons. */
 class ThemeControl implements maplibregl.IControl {
   private container = document.createElement("div");
@@ -260,12 +299,7 @@ export default function MapView(props: Props) {
     });
 
     map.on("style.load", () => {
-      // Liberty's 3D buildings read heights that some buildings lack; default them
-      // to 0 so MapLibre doesn't log a type warning for each one.
-      if (map.getLayer("building-3d")) {
-        map.setPaintProperty("building-3d", "fill-extrusion-height", ["coalesce", ["get", "render_height"], 0]);
-        map.setPaintProperty("building-3d", "fill-extrusion-base", ["coalesce", ["get", "render_min_height"], 0]);
-      }
+      quietBasemapWarnings(map);
       addOverlays(map, shownThemeRef.current);
       shownHourRef.current = -1;
       setStyleVersion((v) => v + 1);
