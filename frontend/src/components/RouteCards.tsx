@@ -15,6 +15,9 @@ export default function RouteCards({ routes, selectedId, onSelect }: Props) {
         <h2>Route options</h2>
         <span>{routes.length} {routes.length === 1 ? "route" : "routes"} found</span>
       </div>
+      {routes.length < 3 && (
+        <p className="routes-note">The road network offers no other reasonable route between these places.</p>
+      )}
       <div className="route-list" role="radiogroup" aria-label="Route options">
         {routes.map((r) => {
           const worst = worstLevel(r);

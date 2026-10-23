@@ -75,23 +75,9 @@ h1, h2, h3, p { margin: 0; }
 .brand { display: flex; align-items: center; gap: 12px; padding: 2px 2px 4px; }
 .brand > svg { flex-shrink: 0; }
 .brand-text { flex: 1; min-width: 0; }
-.brand h1 { font-size: 21px; font-weight: 750; letter-spacing: -0.025em; line-height: 1.2; white-space: nowrap; }
-.brand p { color: var(--muted); font-size: 12px; margin-top: 3px; }
-.theme-toggle {
-  flex-shrink: 0;
-  align-self: flex-start;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text-2);
-  box-shadow: var(--shadow-sm);
-  transition: background 0.15s, color 0.15s;
-}
-.theme-toggle:hover { background: var(--surface-hover); color: var(--accent); }
+.brand h1 { font-size: 22px; font-weight: 750; letter-spacing: -0.025em; line-height: 1.2; white-space: nowrap; }
+.brand p { color: var(--muted); font-size: 12.5px; margin-top: 3px; white-space: nowrap; }
+.routes-note { font-size: 12.5px; color: var(--muted); margin-top: -4px; }
 
 .card {
   background: var(--panel);
@@ -368,6 +354,10 @@ button.link:hover { text-decoration: underline; }
 .maplibregl-ctrl-top-right .maplibregl-ctrl { margin: 20px 20px 0 0; }
 .maplibregl-ctrl-group:not(:empty) { border-radius: 12px; box-shadow: var(--shadow-md); overflow: hidden; }
 .maplibregl-ctrl-group button { width: 42px; height: 42px; }
+/* The light/dark control sits in the same stack, 10 px under the zoom buttons. */
+.maplibregl-ctrl-top-right .theme-control { margin-top: 10px; }
+.theme-control button { display: grid; place-items: center; color: var(--text-2); }
+.theme-control button:hover { color: var(--accent); }
 
 .loading, .map-note {
   position: absolute; left: 50%; transform: translateX(-50%); z-index: 3;
@@ -397,11 +387,15 @@ button.link:hover { text-decoration: underline; }
 .truck-marker.selected { color: var(--accent-strong); z-index: 3; }
 .truck-marker.west svg { transform: scaleX(-1); }
 .route-tag {
-  display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
-  border: 2px solid var(--tag-border); border-radius: 8px; background: var(--tag-bg); color: #fff;
-  font-size: 13px; font-weight: 600; white-space: nowrap; box-shadow: 0 3px 8px rgba(15, 23, 42, 0.3);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 4px 10px 5px;
+  border: 2px solid var(--tag-border); border-radius: 9px; background: var(--tag-bg); color: #fff;
+  font-size: 13px; font-weight: 600; line-height: 1.25; text-align: left; white-space: nowrap;
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.3);
 }
-.route-tag.selected { background: var(--accent); padding: 5px 12px; font-size: 14px; z-index: 2; }
+.route-tag-meta { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; opacity: 0.88; }
+.route-tag-meta i { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85); }
+.route-tag.selected { background: var(--accent); padding: 5px 12px 6px; font-size: 14px; z-index: 2; }
+.route-tag.selected .route-tag-meta { font-size: 11.5px; opacity: 0.95; }
 
 /* Checkpoint popup */
 .cp-popup .maplibregl-popup-content {
@@ -418,6 +412,7 @@ button.link:hover { text-decoration: underline; }
 .cp-popup.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--surface); }
 .cp-popup .maplibregl-popup-close-button { top: 6px; right: 8px; font-size: 20px; color: var(--faint); }
 .cp-popup .maplibregl-popup-close-button:hover { background: none; color: var(--text); }
+.cp-route { margin: 0 24px 2px 0; font-size: 11.5px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; }
 .cp-head { margin: 0 24px 10px 0; font-size: 13.5px; font-weight: 600; color: var(--text); }
 .cp-row { display: grid; grid-template-columns: 18px 54px auto; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; }
 .cp-row svg, .cp-label { color: var(--text-3); }
@@ -570,9 +565,12 @@ button.link:hover { text-decoration: underline; }
 }
 @media (max-width: 480px) {
   .sidebar { padding: 14px 12px; }
-  .brand h1 { font-size: 17.5px; white-space: normal; }
+  .brand h1 { font-size: 18.5px; white-space: normal; }
   .brand > svg { width: 52px; height: 32px; }
   .brand p { white-space: normal; }
   .layer-switch button:not(.on) span { display: none; }
   .route-card { padding: 12px; gap: 10px; }
+  /* The cards above already carry each route's summary; keep map tags compact. */
+  .route-tag-meta { display: none; }
+  .route-tag, .route-tag.selected { padding: 3px 9px; font-size: 12.5px; }
 }

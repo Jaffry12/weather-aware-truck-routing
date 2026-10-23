@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from . import services
 from .clients import photon
 from .clients.http import RateLimited, UpstreamError
+from .clients.osrm import NoRoute
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +80,8 @@ def plan(request: Request) -> Response:
 
 
 def _upstream_error(exc: UpstreamError) -> Response:
+    if isinstance(exc, NoRoute):
+        return Response({"detail": str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
     if isinstance(exc, RateLimited):
         return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE, headers={"Retry-After": "60"})
     return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)

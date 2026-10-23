@@ -119,13 +119,22 @@ def test_validation_errors(override, field):
     assert resp.status_code == 400 and field in resp.json()
 
 
-def test_upstream_failure_is_a_502():
+@pytest.mark.parametrize("status", [200, 400])
+def test_unroutable_trip_is_a_422_with_a_plain_message(status):
+    # The public OSRM server answers HTTP 400 with {"code": "NoRoute"}.
     with responses.RequestsMock() as rsps:
-        rsps.add(responses.GET, re.compile(r"https://router\.project-osrm\.org/.*"),
+        rsps.add(responses.GET, re.compile(r"https://router\.project-osrm\.org/.*"), status=status,
                  json={"code": "NoRoute", "message": "Impossible route between points"})
         resp = APIClient().post("/api/plan", _plan_body(), format="json")
+    assert resp.status_code == 422
+    assert resp.json()["detail"].startswith("No drivable route connects these places")
+
+
+def test_routing_outage_is_a_502():
+    with responses.RequestsMock() as rsps:
+        rsps.add(responses.GET, re.compile(r"https://router\.project-osrm\.org/.*"), status=500, body="down")
+        resp = APIClient().post("/api/plan", _plan_body(), format="json")
     assert resp.status_code == 502
-    assert "Impossible route" in resp.json()["detail"]
 
 
 def test_weather_rate_limit_is_a_503_with_retry_after():
@@ -164,6 +173,15 @@ def test_replanning_reuses_cached_forecasts(fake_upstreams):
     assert sum("open-meteo" in c.request.url for c in fake_upstreams.calls) == weather_calls
 
 
+def test_typical_trips_get_one_weather_lookup_per_checkpoint():
+    from routing import services
+
+    # Three ~1,000 mile routes at 10-mile spacing, well apart: about 300 checkpoints.
+    points = [(-100 + lane, 30 + i * 0.145) for lane in (0, 1.5, 3) for i in range(100)]
+    lookups = services._lookup_points(points)
+    assert len(set(lookups)) == len(points)
+
+
 def test_checkpoint_lookups_stay_within_the_location_budget():
     from routing import services
 
@@ -171,3 +189,39 @@ def test_checkpoint_lookups_stay_within_the_location_budget():
     lookups = services._lookup_points(points)
     assert len(lookups) == len(points)
     assert len(set(lookups)) <= services.MAX_CHECKPOINT_LOCATIONS
+
+
+def test_a_third_route_is_found_when_strict_rules_leave_two(monkeypatch):
+    """A coast road with no parallel: the only detour is long, so the relaxed pass keeps it."""
+    from routing import services
+    from routing.clients import osrm
+
+    straight = _line(-80.19, 25.76, -81.78, 24.56)
+    nearby = _line(-80.19, 25.76, -81.78, 24.56, bend=0.6)
+    long_way = _line(-80.19, 25.76, -81.78, 24.56, bend=1.6)
+
+    def fake_route(waypoints, alternatives=0):
+        if alternatives:
+            return [osrm.RawRoute(coords=[tuple(c) for c in straight], segment_seconds=None, roads=("US-1",)),
+                    osrm.RawRoute(coords=[tuple(c) for c in nearby], segment_seconds=None, roads=("FL-997",))]
+        return [osrm.RawRoute(coords=[tuple(c) for c in long_way], segment_seconds=None, roads=("FL-27",))]
+
+    monkeypatch.setattr(osrm, "route", fake_route)
+    routes = services.find_routes((-80.19, 25.76), (-81.78, 24.56))
+    assert len(routes) == 3
+    assert routes[0].distance_miles == min(r.distance_miles for r in routes)
+
+
+def test_geocode_returns_labelled_places_without_duplicates():
+    feature = {"geometry": {"coordinates": [-104.98, 39.74]},
+               "properties": {"name": "Denver", "state": "Colorado", "country": "United States"}}
+    with responses.RequestsMock() as rsps:
+        rsps.add(responses.GET, re.compile(r"https://photon\.komoot\.io/.*"), json={"features": [feature, feature]})
+        resp = APIClient().get("/api/geocode", {"q": "denver"})
+    assert resp.status_code == 200
+    assert resp.json() == {"results": [{"label": "Denver, Colorado, United States", "lat": 39.74, "lon": -104.98}]}
+
+
+def test_geocode_ignores_one_letter_queries():
+    resp = APIClient().get("/api/geocode", {"q": "d"})
+    assert resp.status_code == 200 and resp.json() == {"results": []}

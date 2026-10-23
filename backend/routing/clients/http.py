@@ -39,18 +39,26 @@ def _make_session() -> requests.Session:
 session = _make_session()
 
 
-def get_json(url: str, params: dict | None = None) -> object:
+def get_json(url: str, params: dict | None = None, error_statuses: tuple[int, ...] = ()) -> object:
+    """GET JSON. Statuses in `error_statuses` return their JSON body for the caller to interpret."""
     host = url.split("/")[2]
     try:
         resp = session.get(url, params=params, timeout=TIMEOUT_SECONDS)
     except requests.exceptions.RetryError as exc:
-        # Retries ran out; with 429 in the retry list that is almost always throttling.
-        raise RateLimited(f"{host} is busy (free-tier rate limit). Please try again in a minute.") from exc
+        # Retries ran out: throttling ("too many 429 error responses") or a server outage (5xx).
+        if "429" in str(exc):
+            raise RateLimited(f"{host} is busy (free-tier rate limit). Please try again in a minute.") from exc
+        raise UpstreamError(f"{host} is not responding right now. Please try again shortly.") from exc
     except requests.RequestException as exc:
         # Don't echo the full URL (it can be thousands of coordinates long).
         raise UpstreamError(f"Could not reach {host} ({type(exc).__name__}).") from exc
     if resp.status_code == 429:
         raise RateLimited(f"{host} is busy (free-tier rate limit). Please try again in a minute.")
+    if resp.status_code in error_statuses:
+        try:
+            return resp.json()
+        except ValueError:
+            pass
     if resp.status_code >= 400:
         raise UpstreamError(f"{host} returned HTTP {resp.status_code}: {resp.text[:200]}")
     return resp.json()

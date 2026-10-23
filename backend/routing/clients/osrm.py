@@ -11,6 +11,10 @@ from .http import UpstreamError, cached, get_json
 ROUTE_TTL_SECONDS = 6 * 3600
 
 
+class NoRoute(UpstreamError):
+    """No drivable route joins the places (an island, or a point far from any road)."""
+
+
 @dataclass(frozen=True)
 class RawRoute:
     coords: list[tuple[float, float]]
@@ -30,10 +34,17 @@ def route(waypoints: list[tuple[float, float]], alternatives: int = 0) -> list[R
         "steps": "true",
         "alternatives": str(alternatives) if alternatives else "false",
     }
-    data = cached("osrm", (url, sorted(params.items())), ROUTE_TTL_SECONDS, lambda: get_json(url, params))
-    if not isinstance(data, dict) or data.get("code") != "Ok" or not data.get("routes"):
+    # OSRM answers unroutable requests with HTTP 400 and a JSON code.
+    data = cached("osrm", (url, sorted(params.items())), ROUTE_TTL_SECONDS,
+                  lambda: get_json(url, params, error_statuses=(400,)))
+    code = data.get("code") if isinstance(data, dict) else None
+    if code == "NoRoute":
+        raise NoRoute("No drivable route connects these places. Try two places on the same road network.")
+    if code == "NoSegment":
+        raise NoRoute("One of the places is too far from a drivable road. Try a nearby town or address.")
+    if code != "Ok" or not data.get("routes"):
         message = data.get("message") if isinstance(data, dict) else None
-        raise UpstreamError(message or "No drivable route found between these places.")
+        raise UpstreamError(f"Routing service error: {message or 'no routes returned'}.")
     return [_parse(r) for r in data["routes"]]
 
 

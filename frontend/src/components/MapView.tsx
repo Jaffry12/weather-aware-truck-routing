@@ -1,10 +1,11 @@
 import maplibregl, { type GeoJSONSource } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { RISK_COLORS, RISK_LEVELS, formatDayTime, placeName } from "../risk";
-import { boundsOf, headingWest, heatmapFrames, hourTime, labelPoints, positionAt } from "../routeMath";
+import { RISK_COLORS, RISK_LEVELS, formatDayTime, formatDuration, formatMiles, placeName } from "../risk";
+import { boundsOf, headingWest, heatmapFrames, labelPoints, positionAt } from "../routeMath";
 import type { Theme } from "../theme";
-import type { Checkpoint, RiskLabel, TripPlan } from "../types";
+import { type Timeline, useTimeline } from "../timeline";
+import type { Checkpoint, RiskLabel, RouteOption, TripPlan } from "../types";
 
 export type WeatherLayer = "risk" | "precip" | "wind";
 
@@ -18,6 +19,9 @@ const STYLES: Record<Theme, string> = {
 const TERRAIN_TILES = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 const LAYER_PROPERTY: Record<WeatherLayer, string> = { risk: "r", precip: "p", wind: "w" };
+// Two copies of the weather layer: the current hour and the next one, cross-faded
+// as the forecast time moves between them.
+const HEAT_LAYERS = ["heat", "heat-next"] as const;
 
 /** Colours for the layers this app draws on top of the basemap. */
 const PALETTE = {
@@ -51,6 +55,11 @@ const riskColor = (property: string) =>
     3, RISK_COLORS.Severe,
     RISK_COLORS["No Travel"],
   ] as unknown as maplibregl.ExpressionSpecification;
+
+/** Weather disc opacity: the theme's level-based opacity, scaled by the cross-fade weight. */
+const heatOpacity = (property: string, theme: Theme, weight: number) =>
+  ["*", weight, ["match", ["get", property], 0, PALETTE[theme].lowOpacity, PALETTE[theme].riskOpacity]] as
+    unknown as maplibregl.ExpressionSpecification;
 
 /**
  * Disc radius (px, by zoom) that covers `miles` on the ground at latitude `lat`.
@@ -90,17 +99,27 @@ function addOverlays(map: maplibregl.Map, theme: Theme) {
   // The weather layer is a field of soft discs, one per forecast point, each in
   // its own risk colour. Unlike a density heatmap, overlapping Low points can
   // never add up to look like Moderate, so the colour always means the rule's level.
-  map.addSource("heat", { type: "geojson", data: EMPTY });
-  map.addLayer(
-    {
-      id: "heat",
-      type: "circle",
-      source: "heat",
-      layout: { "circle-sort-key": ["get", "r"] },
-      paint: { "circle-color": riskColor("r"), "circle-opacity": 0, "circle-blur": 1, "circle-radius": 0 },
-    },
-    firstLabel,
-  );
+  for (const id of HEAT_LAYERS) {
+    map.addSource(id, { type: "geojson", data: EMPTY });
+    map.addLayer(
+      {
+        id,
+        type: "circle",
+        source: id,
+        layout: { "circle-sort-key": ["get", "r"] },
+        paint: {
+          "circle-color": riskColor("r"),
+          "circle-opacity": 0,
+          // Opacity changes every animation frame during playback; skip MapLibre's easing.
+          // (Valid style spec, but missing from MapLibre's paint typings.)
+          "circle-opacity-transition": { duration: 0, delay: 0 },
+          "circle-blur": 1,
+          "circle-radius": 0,
+        } as maplibregl.CircleLayerSpecification["paint"],
+      },
+      firstLabel,
+    );
+  }
 
   map.addSource("routes", { type: "geojson", data: EMPTY });
   map.addLayer({
@@ -121,48 +140,87 @@ function addOverlays(map: maplibregl.Map, theme: Theme) {
     },
   });
 
+  // Checkpoints of every route; the selected route's are larger and drawn on top.
   map.addSource("checkpoints", { type: "geojson", data: EMPTY });
   map.addLayer({
     id: "checkpoints",
     type: "circle",
     source: "checkpoints",
+    layout: { "circle-sort-key": ["case", ["get", "selected"], 1, 0] },
     paint: {
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 4, 7, 7.5],
+      "circle-radius": ["interpolate", ["linear"], ["zoom"],
+        3, ["case", ["get", "selected"], 4, 2.6],
+        7, ["case", ["get", "selected"], 7.5, 5]],
       "circle-color": riskColor("risk_level"),
       "circle-stroke-color": p.checkpointStroke,
-      "circle-stroke-width": 2,
+      "circle-stroke-width": ["case", ["get", "selected"], 2, 1.25],
     },
   });
+}
+
+/** Light/dark switch, built as a map control so it stacks under the zoom buttons. */
+class ThemeControl implements maplibregl.IControl {
+  private container = document.createElement("div");
+  private button = document.createElement("button");
+
+  constructor(onToggle: () => void) {
+    this.container.className = "maplibregl-ctrl maplibregl-ctrl-group theme-control";
+    this.button.type = "button";
+    this.button.addEventListener("click", onToggle);
+    this.container.append(this.button);
+  }
+
+  show(theme: Theme) {
+    const next = theme === "dark" ? "light" : "dark";
+    this.button.title = `Switch to ${next} mode`;
+    this.button.setAttribute("aria-label", `Switch to ${next} mode`);
+    this.button.innerHTML = theme === "dark" ? SUN_SVG : MOON_SVG;
+  }
+
+  onAdd() {
+    return this.container;
+  }
+
+  onRemove() {
+    this.container.remove();
+  }
 }
 
 interface Props {
   plan: TripPlan | null;
   places: { origin: string; destination: string } | null;
   selectedRouteId: string | null;
-  hour: number;
+  timeline: Timeline;
   layer: WeatherLayer;
   theme: Theme;
   focus: { checkpoint: Checkpoint; key: number } | null;
   onSelectRoute: (id: string) => void;
+  onToggleTheme: () => void;
 }
 
-export default function MapView({ plan, places, selectedRouteId, hour, layer, theme, focus, onSelectRoute }: Props) {
+export default function MapView(props: Props) {
+  const { plan, places, selectedRouteId, timeline, layer, theme, focus, onSelectRoute, onToggleTheme } = props;
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
+  const themeControlRef = useRef<ThemeControl | null>(null);
   const pinnedRef = useRef(false);
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const truckMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const tagMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const selectRef = useRef(onSelectRoute);
+  const toggleThemeRef = useRef(onToggleTheme);
   const themeRef = useRef(theme);
   const shownThemeRef = useRef(theme);
+  const shownHourRef = useRef(-1);
   // Bumped every time a basemap finishes loading and our layers are (re)added,
   // so the effects below repaint their data onto the new style.
   const [styleVersion, setStyleVersion] = useState(0);
   const ready = styleVersion > 0;
+  const t = useTimeline(timeline);
 
   selectRef.current = onSelectRoute;
+  toggleThemeRef.current = onToggleTheme;
   themeRef.current = theme;
 
   const frames = useMemo(() => (plan?.heatmap ? heatmapFrames(plan.heatmap) : []), [plan]);
@@ -180,6 +238,10 @@ export default function MapView({ plan, places, selectedRouteId, hour, layer, th
       cooperativeGestures: window.matchMedia("(max-width: 860px)").matches,
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    const themeControl = new ThemeControl(() => toggleThemeRef.current());
+    themeControl.show(themeRef.current);
+    map.addControl(themeControl, "top-right");
+    themeControlRef.current = themeControl;
 
     const popup = new maplibregl.Popup({
       closeButton: true,
@@ -193,14 +255,15 @@ export default function MapView({ plan, places, selectedRouteId, hour, layer, th
 
     map.on("style.load", () => {
       addOverlays(map, shownThemeRef.current);
+      shownHourRef.current = -1;
       setStyleVersion((v) => v + 1);
     });
 
     // Layer-scoped handlers survive basemap swaps, so they are registered once.
-    const show = (cp: Checkpoint) => popup.setLngLat([cp.lon, cp.lat]).setHTML(checkpointHtml(cp)).addTo(map);
+    const show = (cp: CheckpointPayload) => popup.setLngLat([cp.lon, cp.lat]).setHTML(checkpointHtml(cp)).addTo(map);
     const checkpointAt = (e: maplibregl.MapLayerMouseEvent) => {
       const payload = e.features?.[0]?.properties?.payload;
-      return payload ? (JSON.parse(payload) as Checkpoint) : null;
+      return payload ? (JSON.parse(payload) as CheckpointPayload) : null;
     };
     map.on("click", "routes-line", (e) => {
       const id = e.features?.[0]?.properties?.id;
@@ -236,6 +299,7 @@ export default function MapView({ plan, places, selectedRouteId, hour, layer, th
 
   // Theme switch: swap the basemap; "style.load" re-adds our layers in the new colours.
   useEffect(() => {
+    themeControlRef.current?.show(theme);
     const map = mapRef.current;
     if (!map || !ready || shownThemeRef.current === theme) return;
     shownThemeRef.current = theme;
@@ -268,11 +332,7 @@ export default function MapView({ plan, places, selectedRouteId, hour, layer, th
 
     const tagSpots = labelPoints(plan.routes);
     plan.routes.forEach((route, i) => {
-      const tag = document.createElement("button");
-      tag.type = "button";
-      tag.className = "route-tag";
-      tag.innerHTML = route.is_recommended ? `${route.name} <span aria-hidden>★</span>` : route.name;
-      tag.title = `${route.name} via ${route.summary}`;
+      const tag = routeTag(route);
       tag.addEventListener("click", () => selectRef.current(route.id));
       tagMarkersRef.current.set(route.id, new maplibregl.Marker({ element: tag }).setLngLat(tagSpots[i]).addTo(map));
 
@@ -286,13 +346,13 @@ export default function MapView({ plan, places, selectedRouteId, hour, layer, th
     // Leave room for the layer switcher and forecast panel; phones get tighter margins.
     const narrow = map.getContainer().clientWidth < 600;
     map.fitBounds(boundsOf(plan.routes), {
-      padding: narrow ? { top: 80, bottom: 190, left: 56, right: 56 } : { top: 100, bottom: 200, left: 70, right: 70 },
+      padding: narrow ? { top: 80, bottom: 190, left: 56, right: 56 } : { top: 100, bottom: 200, left: 70, right: 80 },
       duration: 900,
       maxZoom: 9,
     });
   }, [plan, places, ready]);
 
-  // Route styling and checkpoints follow the selected route.
+  // Route styling and every route's checkpoints follow the selection.
   useEffect(() => {
     const map = mapRef.current;
     const routes = map?.getSource("routes") as GeoJSONSource | undefined;
@@ -311,14 +371,19 @@ export default function MapView({ plan, places, selectedRouteId, hour, layer, th
         properties: { id: r.id, selected: r.id === selectedRouteId },
       })),
     });
-    const selected = plan.routes.find((r) => r.id === selectedRouteId);
     checkpoints.setData({
       type: "FeatureCollection",
-      features: (selected?.checkpoints ?? []).map((cp) => ({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [cp.lon, cp.lat] },
-        properties: { risk_level: cp.risk_level, payload: JSON.stringify(cp) },
-      })),
+      features: plan.routes.flatMap((route) =>
+        route.checkpoints.map((cp) => ({
+          type: "Feature" as const,
+          geometry: { type: "Point" as const, coordinates: [cp.lon, cp.lat] },
+          properties: {
+            risk_level: cp.risk_level,
+            selected: route.id === selectedRouteId,
+            payload: JSON.stringify({ ...cp, route: route.name } satisfies CheckpointPayload),
+          },
+        })),
+      ),
     });
     for (const markers of [truckMarkersRef.current, tagMarkersRef.current]) {
       markers.forEach((marker, id) => marker.getElement().classList.toggle("selected", id === selectedRouteId));
@@ -326,49 +391,68 @@ export default function MapView({ plan, places, selectedRouteId, hour, layer, th
     popupRef.current?.remove();
   }, [plan, selectedRouteId, styleVersion]);
 
-  // Weather layer look: which property drives the colour, disc size, theme opacity.
+  // Weather layer look: which property drives the colour, and the disc size.
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.getLayer("heat")) return;
     const property = LAYER_PROPERTY[layer];
-    const p = PALETTE[shownThemeRef.current];
-    map.setPaintProperty("heat", "circle-color", riskColor(property));
-    map.setPaintProperty("heat", "circle-opacity", ["match", ["get", property], 0, p.lowOpacity, p.riskOpacity]);
-    map.setLayoutProperty("heat", "circle-sort-key", ["get", property]);
-    if (plan?.heatmap) {
-      const lats = plan.heatmap.points.map((pt) => pt[1]);
-      const midLat = lats.reduce((a, b) => a + b, 0) / Math.max(1, lats.length);
-      map.setPaintProperty("heat", "circle-radius", discRadius(plan.heatmap.spacing_miles * 1.4, midLat));
+    const radius = plan?.heatmap ? discRadius(plan.heatmap.spacing_miles * 1.4, midLatitude(plan.heatmap.points)) : 0;
+    for (const id of HEAT_LAYERS) {
+      map.setPaintProperty(id, "circle-color", riskColor(property));
+      map.setLayoutProperty(id, "circle-sort-key", ["get", property]);
+      map.setPaintProperty(id, "circle-radius", radius);
     }
   }, [layer, plan, styleVersion]);
 
-  // The forecast slider: swap a prebuilt frame and move the trucks.
+  // A new plan starts its frames afresh. (Declared before the effect below, so it runs first.)
+  useEffect(() => {
+    shownHourRef.current = -1;
+  }, [frames]);
+
+  // Forecast time (fractional hours): cross-fade the two hourly frames around it
+  // and glide the trucks to where they would be at that moment.
   useEffect(() => {
     const map = mapRef.current;
-    const heat = map?.getSource("heat") as GeoJSONSource | undefined;
-    if (heat) heat.setData(frames[hour] ?? EMPTY);
-    if (!map || !ready || !plan?.heatmap) return;
-    const elapsed = (hourTime(plan.heatmap, hour).getTime() - new Date(plan.departure).getTime()) / 1000;
+    if (!map?.getSource("heat") || !plan?.heatmap) return;
+    const hour = Math.min(Math.floor(t), frames.length - 1);
+    const fade = Math.min(1, t - hour);
+    if (shownHourRef.current !== hour) {
+      (map.getSource("heat") as GeoJSONSource).setData(frames[hour] ?? EMPTY);
+      (map.getSource("heat-next") as GeoJSONSource).setData(frames[hour + 1] ?? frames[hour] ?? EMPTY);
+      shownHourRef.current = hour;
+    }
+    const property = LAYER_PROPERTY[layer];
+    map.setPaintProperty("heat", "circle-opacity", heatOpacity(property, shownThemeRef.current, 1 - fade));
+    map.setPaintProperty("heat-next", "circle-opacity", heatOpacity(property, shownThemeRef.current, fade));
+
+    const elapsed = (new Date(plan.heatmap.start).getTime() + t * 3600_000 - new Date(plan.departure).getTime()) / 1000;
     for (const route of plan.routes) {
       const marker = truckMarkersRef.current.get(route.id);
       if (!marker) continue;
       marker.setLngLat(positionAt(route, elapsed));
       marker.getElement().classList.toggle("west", headingWest(route, elapsed));
     }
-  }, [frames, hour, plan, ready, styleVersion]);
+  }, [t, frames, plan, layer, styleVersion]);
 
   // Jump to a checkpoint picked in the table, and pin its details.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready || !focus) return;
+    if (!map || !ready || !focus || !plan) return;
     const cp = focus.checkpoint;
+    const route = plan.routes.find((r) => r.checkpoints.includes(cp));
     map.flyTo({ center: [cp.lon, cp.lat], zoom: Math.max(map.getZoom(), 7), duration: 700 });
-    popupRef.current!.setLngLat([cp.lon, cp.lat]).setHTML(checkpointHtml(cp)).addTo(map);
+    popupRef.current!.setLngLat([cp.lon, cp.lat])
+      .setHTML(checkpointHtml({ ...cp, route: route?.name ?? "" })).addTo(map);
     pinnedRef.current = true;
-  }, [focus, ready]);
+  }, [focus, ready, plan]);
 
   return <div ref={container} className="map" aria-label="Route map" />;
 }
+
+type CheckpointPayload = Checkpoint & { route: string };
+
+const midLatitude = (points: [number, number][]) =>
+  points.reduce((sum, p) => sum + p[1], 0) / Math.max(1, points.length);
 
 const TRUCK_SVG = `<svg viewBox="0 0 40 24" width="34" height="20" aria-hidden="true">
   <path d="M2 4.5A2.5 2.5 0 0 1 4.5 2h19A2.5 2.5 0 0 1 26 4.5V18H2z" fill="currentColor" stroke="#fff" stroke-width="1.6"/>
@@ -377,6 +461,27 @@ const TRUCK_SVG = `<svg viewBox="0 0 40 24" width="34" height="20" aria-hidden="
   <circle cx="9" cy="19" r="3.2" fill="#0f172a" stroke="#fff" stroke-width="1.6"/>
   <circle cx="31" cy="19" r="3.2" fill="#0f172a" stroke="#fff" stroke-width="1.6"/>
 </svg>`;
+
+const ICON_ATTRS = 'viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+const MOON_SVG = `<svg ${ICON_ATTRS}><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>`;
+const SUN_SVG = `<svg ${ICON_ATTRS}><circle cx="12" cy="12" r="4"/>` +
+  '<path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></svg>';
+
+/** Map tag with the route's summary: name, time, distance, and its worst risk as a dot. */
+function routeTag(route: RouteOption): HTMLElement {
+  const tag = document.createElement("button");
+  tag.type = "button";
+  tag.className = "route-tag";
+  tag.innerHTML = `
+    <span class="route-tag-name">${escapeHtml(route.name)}${route.is_recommended ? " <span aria-hidden=\"true\">★</span>" : ""}</span>
+    <span class="route-tag-meta">
+      <i style="background:${RISK_COLORS[route.max_risk]}"></i>${formatDuration(route.duration_minutes)} · ${formatMiles(route.distance_miles)}
+    </span>`;
+  tag.title = `${route.name} via ${route.summary}: ${formatDuration(route.duration_minutes)}, ` +
+    `${formatMiles(route.distance_miles)}, arrives ${formatDayTime(route.arrival)}, worst risk ${route.max_risk}`;
+  return tag;
+}
 
 function endpointPin(letter: string, color: string, label?: string): HTMLElement {
   const el = document.createElement("div");
@@ -399,7 +504,7 @@ const POPUP_ICONS = {
   snow: '<path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9M9.5 4.5 12 6l2.5-1.5M9.5 19.5 12 18l2.5 1.5"/>',
 };
 
-function checkpointHtml(cp: Checkpoint): string {
+function checkpointHtml(cp: CheckpointPayload): string {
   const row = (icon: keyof typeof POPUP_ICONS, label: string, value: string, risk: RiskLabel) => `
     <div class="cp-row">
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"
@@ -413,6 +518,7 @@ function checkpointHtml(cp: Checkpoint): string {
   ].filter(Boolean);
   return `
     <div class="cp">
+      ${cp.route ? `<div class="cp-route">${escapeHtml(cp.route)}</div>` : ""}
       <div class="cp-head">Mile ${cp.mile.toFixed(0)} · ETA ${escapeHtml(formatDayTime(cp.eta))}</div>
       ${row("wind", "Wind", `${cp.wind_mph.toFixed(0)} mph`, cp.wind_risk)}
       ${row("rain", "Rain", `${cp.rain_in_hr.toFixed(2)} in/hr`, cp.rain_risk)}

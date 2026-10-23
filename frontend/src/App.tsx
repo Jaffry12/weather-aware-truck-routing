@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { planTrip } from "./api";
 import CheckpointTable from "./components/CheckpointTable";
 import ForecastSlider from "./components/ForecastSlider";
@@ -6,15 +6,16 @@ import LayerSwitch from "./components/LayerSwitch";
 import MapView, { type WeatherLayer } from "./components/MapView";
 import RouteCards, { WhyCallout } from "./components/RouteCards";
 import TripForm from "./components/TripForm";
-import { Logo, MoonIcon, SunIcon } from "./icons";
+import { Logo } from "./icons";
 import { type Theme, applyTheme, initialTheme, savedTheme, saveTheme } from "./theme";
+import { createTimeline } from "./timeline";
 import type { Checkpoint, TripPlan, TripRequest } from "./types";
 
 export default function App() {
   const [plan, setPlan] = useState<TripPlan | null>(null);
   const [places, setPlaces] = useState<{ origin: string; destination: string } | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hour, setHour] = useState(0);
+  const timeline = useMemo(createTimeline, []);
   const [playing, setPlaying] = useState(false);
   const [layer, setLayer] = useState<WeatherLayer>("risk");
   const [theme, setTheme] = useState<Theme>(initialTheme);
@@ -35,13 +36,13 @@ export default function App() {
       setPlan(result);
       setPlaces({ origin: req.origin.label, destination: req.destination.label });
       setSelectedId(result.recommended_route_id);
-      setHour(0);
+      timeline.set(0);
     } catch (e) {
       if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
       if (inflight.current === controller) setLoading(false);
     }
-  }, []);
+  }, [timeline]);
 
   useEffect(() => applyTheme(theme), [theme]);
 
@@ -55,11 +56,13 @@ export default function App() {
     return () => query.removeEventListener("change", follow);
   }, []);
 
-  const toggleTheme = () => {
-    const next = theme === "dark" ? "light" : "dark";
-    saveTheme(next);
-    setTheme(next);
-  };
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => {
+      const next = current === "dark" ? "light" : "dark";
+      saveTheme(next);
+      return next;
+    });
+  }, []);
 
   const selected = plan?.routes.find((r) => r.id === selectedId);
   const onFocus = useCallback((checkpoint: Checkpoint) => setFocus({ checkpoint, key: Date.now() }), []);
@@ -73,11 +76,6 @@ export default function App() {
             <h1>Weather-Aware Truck Routing</h1>
             <p>Compare routes by weather risk at the truck's arrival time</p>
           </div>
-          <button type="button" className="theme-toggle" onClick={toggleTheme}
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            title={theme === "dark" ? "Light mode" : "Dark mode"}>
-            {theme === "dark" ? <SunIcon size={18} /> : <MoonIcon size={18} />}
-          </button>
         </header>
 
         <TripForm loading={loading} onSubmit={submit} />
@@ -100,8 +98,8 @@ export default function App() {
       </aside>
 
       <main className="map-area">
-        <MapView plan={plan} places={places} selectedRouteId={selectedId} hour={hour} layer={layer} theme={theme}
-          focus={focus} onSelectRoute={setSelectedId} />
+        <MapView plan={plan} places={places} selectedRouteId={selectedId} timeline={timeline} layer={layer}
+          theme={theme} focus={focus} onSelectRoute={setSelectedId} onToggleTheme={toggleTheme} />
         <LayerSwitch value={layer} onChange={setLayer} />
         {loading && (
           <div className="loading" role="status">
@@ -110,8 +108,8 @@ export default function App() {
           </div>
         )}
         {plan?.heatmap && (
-          <ForecastSlider heatmap={plan.heatmap} departure={plan.departure} route={selected} hour={hour}
-            playing={playing} onHour={setHour} onPlaying={setPlaying} />
+          <ForecastSlider heatmap={plan.heatmap} departure={plan.departure} route={selected} timeline={timeline}
+            playing={playing} onPlaying={setPlaying} />
         )}
         {plan && !plan.heatmap && (
           <div className="map-note">Corridor forecast unavailable: {plan.heatmap_error}</div>

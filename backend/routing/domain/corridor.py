@@ -19,13 +19,13 @@ MAX_POINTS = 180  # each point is one call against the weather API's free-tier b
 MIN_STEP_MILES = 12.0
 
 
-def corridor_points(routes: Sequence[Route]) -> tuple[list[geo.Point], float]:
+def corridor_points(routes: Sequence[Route], max_points: int = MAX_POINTS) -> tuple[list[geo.Point], float]:
     """Sample points for the corridor, and the spacing in miles they were laid out at."""
     longest = max(r.distance_miles for r in routes)
     step = max(MIN_STEP_MILES, longest / 30)
     while True:
         points = _sample(routes, step)
-        if len(points) <= MAX_POINTS:
+        if len(points) <= max_points:
             return points, step
         step *= 1.25
 

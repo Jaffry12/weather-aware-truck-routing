@@ -15,8 +15,20 @@ ROUTE_COUNT = 3
 HEATMAP_HOURS = 49  # hourly frames for +0 h to +48 h inclusive
 MAX_DETOUR_RATIO = 1.6          # skip alternatives this much longer than the fastest
 SIMILARITY_THRESHOLD = 0.85     # share of grid cells two routes may share before one is a duplicate
+RELAXED_DETOUR_RATIO = 2.0      # second pass, used only if the strict rules leave fewer than three
+RELAXED_SIMILARITY = 0.97
+MAX_VIA_ATTEMPTS = 8
+# Where forced detours go: (share of the way along the fastest route, offset as a
+# share of the straight-line distance), each tried on both sides.
+VIA_PLACEMENTS = ((0.5, 0.15), (0.5, 0.3), (0.33, 0.2), (0.67, 0.2), (0.5, 0.5))
 SIMPLIFY_TOLERANCE_DEG = 0.0005  # about 50 m, plenty for drawing
-MAX_CHECKPOINT_LOCATIONS = 180  # Open-Meteo's free tier counts each location as an API call
+
+# Open-Meteo's free tier counts every location as an API call (600 a minute), so
+# one plan stays well inside that. Checkpoints come first: each gets its own
+# lookup up to MAX_CHECKPOINT_LOCATIONS; the corridor heatmap gets what is left.
+MAX_PLAN_LOCATIONS = 450
+MAX_CHECKPOINT_LOCATIONS = 360
+MIN_HEATMAP_POINTS = 80
 
 ROUTE_LETTERS = "ABCDE"
 
@@ -33,35 +45,41 @@ NOTES = [
 def find_routes(origin: geo.Point, destination: geo.Point) -> list[Route]:
     """Three distinct candidate routes, fastest first.
 
-    OSRM's own alternatives are used first. When it offers fewer than three, a
-    detour is forced through a point offset from the fastest route's midpoint,
-    on each side. Near-duplicates and unreasonably long detours are dropped.
+    OSRM's own alternatives are used first. When it offers fewer than three,
+    detours are forced through points offset to either side of the fastest
+    route. Near-duplicates and unreasonably long detours are dropped; if those
+    strict rules leave fewer than three (say, a coast road with no parallel),
+    they are relaxed once, so a usable third option is shown whenever one exists.
     """
-    raws = osrm.route([origin, destination], alternatives=ROUTE_COUNT)
-    routes: list[Route] = []
-    for raw in raws:
-        _add_if_distinct(routes, build_route(raw.coords, raw.segment_seconds, raw.roads))
+    candidates = [build_route(raw.coords, raw.segment_seconds, raw.roads)
+                  for raw in osrm.route([origin, destination], alternatives=ROUTE_COUNT)]
+    routes = _distinct(candidates, MAX_DETOUR_RATIO, SIMILARITY_THRESHOLD)
+
+    base = routes[0]
+    straight = geo.haversine_miles(origin, destination)
+    attempts = 0
+    for share, fraction in VIA_PLACEMENTS:
+        if len(routes) >= ROUTE_COUNT or attempts >= MAX_VIA_ATTEMPTS:
+            break
+        along = base.distance_miles * share
+        centre = geo.point_at(base.coords, base.cum_miles, along)
+        heading = geo.heading_at(base.coords, base.cum_miles, along)
+        offset = min(150.0, max(8.0, straight * fraction))
+        for side in (90, -90):
+            if len(routes) >= ROUTE_COUNT or attempts >= MAX_VIA_ATTEMPTS:
+                break
+            attempts += 1
+            via = geo.destination_point(centre, heading + side, offset)
+            try:
+                raw = osrm.route([origin, via, destination])[0]
+            except UpstreamError:
+                continue
+            candidates.append(build_route(raw.coords, raw.segment_seconds, raw.roads))
+            routes = _distinct(candidates, MAX_DETOUR_RATIO, SIMILARITY_THRESHOLD)
 
     if len(routes) < ROUTE_COUNT:
-        base = routes[0]
-        mid = base.distance_miles / 2
-        centre = geo.point_at(base.coords, base.cum_miles, mid)
-        heading = geo.heading_at(base.coords, base.cum_miles, mid)
-        straight = geo.haversine_miles(origin, destination)
-        for fraction in (0.15, 0.3):
-            offset = min(150.0, max(8.0, straight * fraction))
-            for side in (90, -90):
-                if len(routes) >= ROUTE_COUNT:
-                    break
-                via = geo.destination_point(centre, heading + side, offset)
-                try:
-                    raw = osrm.route([origin, via, destination])[0]
-                except UpstreamError:
-                    continue
-                _add_if_distinct(routes, build_route(raw.coords, raw.segment_seconds, raw.roads))
-
-    routes.sort(key=lambda r: r.duration_seconds)
-    return routes[:ROUTE_COUNT]
+        routes = _distinct(candidates, RELAXED_DETOUR_RATIO, RELAXED_SIMILARITY)
+    return routes
 
 
 def route_summaries(routes: list[Route]) -> list[str]:
@@ -83,16 +101,23 @@ def route_summaries(routes: list[Route]) -> list[str]:
     return names
 
 
-def _add_if_distinct(routes: list[Route], candidate: Route) -> None:
-    if routes and candidate.distance_miles > MAX_DETOUR_RATIO * min(r.distance_miles for r in routes):
-        return
-    step = max(1.0, candidate.distance_miles / 200)
-    cells = geo.grid_cells(candidate.coords, candidate.cum_miles, step, cell_deg=0.02)
-    for existing in routes:
-        other = geo.grid_cells(existing.coords, existing.cum_miles, step, cell_deg=0.02)
-        if len(cells & other) / max(1, len(cells)) > SIMILARITY_THRESHOLD:
-            return
-    routes.append(candidate)
+def _distinct(candidates: list[Route], max_ratio: float, max_shared: float) -> list[Route]:
+    """Fastest first, up to three routes that are neither too long nor near-copies of one already chosen."""
+    shortest = min(r.distance_miles for r in candidates)
+    step = max(1.0, shortest / 200)
+    chosen: list[Route] = []
+    chosen_cells: list[set] = []
+    for route in sorted(candidates, key=lambda r: r.duration_seconds):
+        if route.distance_miles > max_ratio * shortest:
+            continue
+        cells = geo.grid_cells(route.coords, route.cum_miles, step, cell_deg=0.02)
+        if any(len(cells & other) / max(1, len(cells)) > max_shared for other in chosen_cells):
+            continue
+        chosen.append(route)
+        chosen_cells.append(cells)
+        if len(chosen) == ROUTE_COUNT:
+            break
+    return chosen
 
 
 def plan_trip(origin: geo.Point, destination: geo.Point, departure: datetime, load_lbs: float,
@@ -100,10 +125,12 @@ def plan_trip(origin: geo.Point, destination: geo.Point, departure: datetime, lo
     departure = departure.astimezone(timezone.utc)
     routes = find_routes(origin, destination)
     plans = [checkpoints_for(r, departure, interval_miles) for r in routes]
+    lookups = _lookup_points([cp.point for plan in plans for cp in plan])
+    heatmap_budget = max(MIN_HEATMAP_POINTS, min(corridor.MAX_POINTS, MAX_PLAN_LOCATIONS - len(set(lookups))))
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        checkpoint_job = pool.submit(_conditions_for, plans, departure)
-        heatmap_job = pool.submit(_heatmap, routes, departure, load_lbs)
+        checkpoint_job = pool.submit(_conditions_for, plans, lookups, departure)
+        heatmap_job = pool.submit(_heatmap, routes, departure, load_lbs, heatmap_budget)
         conditions = checkpoint_job.result()
         # The heatmap is context; if only it fails, the routes are still worth returning.
         heatmap, heatmap_error = None, None
@@ -133,12 +160,12 @@ def plan_trip(origin: geo.Point, destination: geo.Point, departure: datetime, lo
     }
 
 
-def _conditions_for(plans: list[list[Checkpoint]], departure: datetime) -> list[list[Conditions]]:
-    """Forecast every checkpoint of every route in one batched lookup."""
-    flat = [cp for plan in plans for cp in plan]
-    latest = max(cp.eta for cp in flat)
+def _conditions_for(plans: list[list[Checkpoint]], lookups: list[geo.Point],
+                    departure: datetime) -> list[list[Conditions]]:
+    """Forecast every checkpoint of every route in one batched lookup (`lookups` lines up with them)."""
+    latest = max(cp.eta for plan in plans for cp in plan)
     hours = int((open_meteo.floor_hour(latest) - open_meteo.floor_hour(departure)).total_seconds() // 3600) + 2
-    series = open_meteo.hourly(_lookup_points([cp.point for cp in flat]), departure, hours)
+    series = open_meteo.hourly(lookups, departure, hours)
     out, k = [], 0
     for plan in plans:
         row = []
@@ -153,18 +180,19 @@ def _conditions_for(plans: list[list[Checkpoint]], departure: datetime) -> list[
 def _lookup_points(points: list[geo.Point]) -> list[geo.Point]:
     """Where each checkpoint's forecast is looked up.
 
-    Normally on the 0.05° grid next to the checkpoint. On very long trips at
-    10-mile spacing the grid is coarsened until one plan fits the weather API's
-    free-tier budget; ETAs and risk are still worked out per checkpoint.
+    Each checkpoint gets its own lookup on the 0.05° grid (about 3 miles, finer
+    than the forecast models). Only coast-to-coast trips at 10-mile spacing
+    exceed the budget; then the grid is coarsened in small steps until they
+    fit. ETAs and risk are still worked out per checkpoint.
     """
     degrees = open_meteo.SNAP_DEGREES
     while len({open_meteo.snap(p, degrees) for p in points}) > MAX_CHECKPOINT_LOCATIONS:
-        degrees *= 2
+        degrees *= 1.5
     return [open_meteo.snap(p, degrees) for p in points]
 
 
-def _heatmap(routes: list[Route], departure: datetime, load_lbs: float) -> dict:
-    points, spacing = corridor.corridor_points(routes)
+def _heatmap(routes: list[Route], departure: datetime, load_lbs: float, max_points: int) -> dict:
+    points, spacing = corridor.corridor_points(routes, max_points)
     series = open_meteo.hourly(points, departure, HEATMAP_HOURS)
     start = open_meteo.floor_hour(departure)
     # levels[h][i] is (overall, wind, precipitation) for point i at hour h.
