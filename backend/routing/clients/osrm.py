@@ -15,7 +15,7 @@ ROUTE_TTL_SECONDS = 6 * 3600
 class RawRoute:
     coords: list[tuple[float, float]]
     segment_seconds: list[float] | None
-    summary: str
+    roads: tuple[str, ...]  # named roads, most-driven first
 
 
 def route(waypoints: list[tuple[float, float]], alternatives: int = 0) -> list[RawRoute]:
@@ -42,15 +42,14 @@ def _parse(r: dict) -> RawRoute:
     seconds: list[float] = []
     for leg in r.get("legs", []):
         seconds.extend(leg.get("annotation", {}).get("duration", []))
-    summary = _main_roads(r.get("legs", []))
     # Annotations should line up with geometry segments. Anything else is ignored,
     # and the planner falls back to distance-based timing.
     return RawRoute(coords=coords, segment_seconds=seconds if len(seconds) == len(coords) - 1 else None,
-                    summary=summary)
+                    roads=_ranked_roads(r.get("legs", [])))
 
 
-def _main_roads(legs: list[dict], top: int = 2) -> str:
-    """The two roads carrying the most distance, preferring route numbers ("I 80") over names."""
+def _ranked_roads(legs: list[dict]) -> tuple[str, ...]:
+    """Roads ordered by distance driven on them, preferring route numbers ("I-80") over names."""
     by_road: dict[str, float] = {}
     for leg in legs:
         for step in leg.get("steps", []):
@@ -59,6 +58,8 @@ def _main_roads(legs: list[dict], top: int = 2) -> str:
             if road:
                 by_road[road] = by_road.get(road, 0.0) + float(step.get("distance", 0.0))
     if not by_road:
-        return ", ".join(s for s in (leg.get("summary", "") for leg in legs) if s)
-    ranked = sorted(by_road, key=by_road.get, reverse=True)[:top]
-    return " / ".join(r.replace("I ", "I-").replace("US ", "US-") for r in ranked)
+        # No steps: fall back to OSRM's own leg summaries ("I 80, I 76").
+        ranked = [road.strip() for leg in legs for road in leg.get("summary", "").split(",") if road.strip()]
+    else:
+        ranked = sorted(by_road, key=by_road.get, reverse=True)
+    return tuple(dict.fromkeys(r.replace("I ", "I-").replace("US ", "US-") for r in ranked))

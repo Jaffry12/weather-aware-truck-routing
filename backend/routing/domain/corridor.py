@@ -15,17 +15,18 @@ from . import geo
 from .planner import Route
 
 LATERAL_OFFSETS_MILES = (0.0, -30.0, 30.0, -60.0, 60.0)
-MAX_POINTS = 320
+MAX_POINTS = 180  # each point is one call against the weather API's free-tier budget
 MIN_STEP_MILES = 12.0
 
 
-def corridor_points(routes: Sequence[Route]) -> list[geo.Point]:
+def corridor_points(routes: Sequence[Route]) -> tuple[list[geo.Point], float]:
+    """Sample points for the corridor, and the spacing in miles they were laid out at."""
     longest = max(r.distance_miles for r in routes)
     step = max(MIN_STEP_MILES, longest / 30)
     while True:
         points = _sample(routes, step)
         if len(points) <= MAX_POINTS:
-            return points
+            return points, step
         step *= 1.25
 
 

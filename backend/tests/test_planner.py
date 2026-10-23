@@ -58,6 +58,7 @@ def test_recommendation_order_follows_the_brief():
     best, reason = recommend([one_severe_fast, calm_slow], ["Route A", "Route B"])
     assert best == 1  # fewest Severe miles beats travel time
     assert "Severe miles" in reason
+    assert "longer than Route A, the fastest option" in reason
 
 
 def test_no_travel_outranks_everything():
@@ -72,6 +73,7 @@ def test_ties_fall_through_to_travel_time():
     b = _eval(100, [Risk.LOW])
     best, reason = recommend([a, b], ["Route A", "Route B"])
     assert best == 1 and "faster than Route A" in reason
+    assert "longer" not in reason  # the winner is already the fastest
 
 
 def test_miles_by_level_add_up_to_route_length():

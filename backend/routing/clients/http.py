@@ -21,6 +21,10 @@ class UpstreamError(Exception):
     """A third-party API failed or returned something unusable."""
 
 
+class RateLimited(UpstreamError):
+    """A free-tier API is throttling us; retrying in a minute usually works."""
+
+
 def _make_session() -> requests.Session:
     session = requests.Session()
     retry = Retry(total=3, backoff_factor=0.4, status_forcelist=(429, 500, 502, 503, 504),
@@ -36,12 +40,19 @@ session = _make_session()
 
 
 def get_json(url: str, params: dict | None = None) -> object:
+    host = url.split("/")[2]
     try:
         resp = session.get(url, params=params, timeout=TIMEOUT_SECONDS)
+    except requests.exceptions.RetryError as exc:
+        # Retries ran out; with 429 in the retry list that is almost always throttling.
+        raise RateLimited(f"{host} is busy (free-tier rate limit). Please try again in a minute.") from exc
     except requests.RequestException as exc:
-        raise UpstreamError(f"Could not reach {url.split('/')[2]}: {exc}") from exc
+        # Don't echo the full URL (it can be thousands of coordinates long).
+        raise UpstreamError(f"Could not reach {host} ({type(exc).__name__}).") from exc
+    if resp.status_code == 429:
+        raise RateLimited(f"{host} is busy (free-tier rate limit). Please try again in a minute.")
     if resp.status_code >= 400:
-        raise UpstreamError(f"{url.split('/')[2]} returned HTTP {resp.status_code}: {resp.text[:200]}")
+        raise UpstreamError(f"{host} returned HTTP {resp.status_code}: {resp.text[:200]}")
     return resp.json()
 
 

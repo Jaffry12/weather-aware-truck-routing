@@ -49,9 +49,9 @@ def _osrm_callback(request):
 def _meteo_callback(request):
     q = parse_qs(urlparse(request.url).query)
     lats = q["latitude"][0].split(",")
-    start = datetime.strptime(q["start_hour"][0], "%Y-%m-%dT%H:%M")
-    end = datetime.strptime(q["end_hour"][0], "%Y-%m-%dT%H:%M")
-    hours = int((end - start).total_seconds() // 3600) + 1
+    first = datetime.strptime(q["start_date"][0], "%Y-%m-%d")
+    last = datetime.strptime(q["end_date"][0], "%Y-%m-%d")
+    hours = 24 * ((last - first).days + 1)
     locs = []
     for lat in lats:
         # Windy south of 40N: high risk on the southern half of every route.
@@ -122,3 +122,48 @@ def test_upstream_failure_is_a_502():
         resp = APIClient().post("/api/plan", _plan_body(), format="json")
     assert resp.status_code == 502
     assert "Impossible route" in resp.json()["detail"]
+
+
+def test_weather_rate_limit_is_a_503_with_retry_after():
+    with responses.RequestsMock(assert_all_requests_are_fired=False) as rsps:
+        rsps.add_callback(responses.GET, re.compile(r"https://router\.project-osrm\.org/.*"), callback=_osrm_callback)
+        rsps.add(responses.GET, re.compile(r"https://api\.open-meteo\.com/.*"), status=429,
+                 json={"error": True, "reason": "Minutely API request limit exceeded."})
+        resp = APIClient().post("/api/plan", _plan_body(), format="json")
+    assert resp.status_code == 503
+    assert resp["Retry-After"] == "60"
+    assert "try again in a minute" in resp.json()["detail"]
+
+
+def test_heatmap_failure_still_returns_the_routes(fake_upstreams, monkeypatch):
+    from routing import services
+    from routing.clients.http import RateLimited
+
+    def busy(*args, **kwargs):
+        raise RateLimited("api.open-meteo.com is busy")
+
+    monkeypatch.setattr(services, "_heatmap", busy)
+    resp = APIClient().post("/api/plan", _plan_body(), format="json")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["routes"]) == 3 and data["heatmap"] is None
+    assert "busy" in data["heatmap_error"]
+
+
+def test_replanning_reuses_cached_forecasts(fake_upstreams):
+    client = APIClient()
+    client.post("/api/plan", _plan_body(load_lbs=42_000), format="json")
+    weather_calls = sum("open-meteo" in c.request.url for c in fake_upstreams.calls)
+    resp = client.post("/api/plan", _plan_body(load_lbs=20_000), format="json")
+    assert resp.status_code == 200
+    # Same trip, different load: every location is already cached.
+    assert sum("open-meteo" in c.request.url for c in fake_upstreams.calls) == weather_calls
+
+
+def test_checkpoint_lookups_stay_within_the_location_budget():
+    from routing import services
+
+    points = [(-120 + i * 0.03, 35 + i * 0.01) for i in range(900)]  # a ~2,000 mile line at 10-mile spacing
+    lookups = services._lookup_points(points)
+    assert len(lookups) == len(points)
+    assert len(set(lookups)) <= services.MAX_CHECKPOINT_LOCATIONS

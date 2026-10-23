@@ -10,7 +10,7 @@ from rest_framework.response import Response
 
 from . import services
 from .clients import photon
-from .clients.http import UpstreamError
+from .clients.http import RateLimited, UpstreamError
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def geocode(request: Request) -> Response:
     try:
         return Response({"results": photon.search(query)})
     except UpstreamError as exc:
-        return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        return _upstream_error(exc)
 
 
 @api_view(["POST"])
@@ -74,5 +74,11 @@ def plan(request: Request) -> Response:
         )
     except UpstreamError as exc:
         log.warning("plan failed: %s", exc)
-        return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        return _upstream_error(exc)
     return Response(result)
+
+
+def _upstream_error(exc: UpstreamError) -> Response:
+    if isinstance(exc, RateLimited):
+        return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE, headers={"Retry-After": "60"})
+    return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)

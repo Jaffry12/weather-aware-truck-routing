@@ -16,6 +16,7 @@ HEATMAP_HOURS = 48
 MAX_DETOUR_RATIO = 1.6          # skip alternatives this much longer than the fastest
 SIMILARITY_THRESHOLD = 0.85     # share of grid cells two routes may share before one is a duplicate
 SIMPLIFY_TOLERANCE_DEG = 0.0005  # about 50 m, plenty for drawing
+MAX_CHECKPOINT_LOCATIONS = 180  # Open-Meteo's free tier counts each location as an API call
 
 ROUTE_LETTERS = "ABCDE"
 
@@ -25,6 +26,7 @@ NOTES = [
     "Each checkpoint stands for the road closer to it than to its neighbours when counting risk miles.",
     "No Travel miles are ranked before Severe miles when choosing the recommended route.",
     "On shared range edges (e.g. rain 0.25 in/hr) the higher risk level is used.",
+    "The heatmap colours each forecast point by its rule-based level, not by point density.",
 ]
 
 
@@ -38,7 +40,7 @@ def find_routes(origin: geo.Point, destination: geo.Point) -> list[Route]:
     raws = osrm.route([origin, destination], alternatives=ROUTE_COUNT)
     routes: list[Route] = []
     for raw in raws:
-        _add_if_distinct(routes, build_route(raw.coords, raw.segment_seconds, raw.summary))
+        _add_if_distinct(routes, build_route(raw.coords, raw.segment_seconds, raw.roads))
 
     if len(routes) < ROUTE_COUNT:
         base = routes[0]
@@ -56,10 +58,29 @@ def find_routes(origin: geo.Point, destination: geo.Point) -> list[Route]:
                     raw = osrm.route([origin, via, destination])[0]
                 except UpstreamError:
                     continue
-                _add_if_distinct(routes, build_route(raw.coords, raw.segment_seconds, raw.summary))
+                _add_if_distinct(routes, build_route(raw.coords, raw.segment_seconds, raw.roads))
 
     routes.sort(key=lambda r: r.duration_seconds)
     return routes[:ROUTE_COUNT]
+
+
+def route_summaries(routes: list[Route]) -> list[str]:
+    """Name each route after its two busiest roads.
+
+    When two routes would get the same name, each also gets the busiest road
+    that the others don't use, so the cards can be told apart.
+    """
+    names = []
+    for i, route in enumerate(routes):
+        name = list(route.roads[:2])
+        twins = [other for j, other in enumerate(routes) if j != i and other.roads[:2] == route.roads[:2]]
+        if twins and name:
+            shared = {road for twin in twins for road in twin.roads}
+            extra = next((road for road in route.roads[2:] if road not in shared), None)
+            if extra:
+                name.append(extra)
+        names.append(" / ".join(name))
+    return names
 
 
 def _add_if_distinct(routes: list[Route], candidate: Route) -> None:
@@ -84,10 +105,16 @@ def plan_trip(origin: geo.Point, destination: geo.Point, departure: datetime, lo
         checkpoint_job = pool.submit(_conditions_for, plans, departure)
         heatmap_job = pool.submit(_heatmap, routes, departure, load_lbs)
         conditions = checkpoint_job.result()
-        heatmap = heatmap_job.result()
+        # The heatmap is context; if only it fails, the routes are still worth returning.
+        heatmap, heatmap_error = None, None
+        try:
+            heatmap = heatmap_job.result()
+        except UpstreamError as exc:
+            heatmap_error = str(exc)
 
     evaluations = [evaluate(r, cps, conds, load_lbs) for r, cps, conds in zip(routes, plans, conditions)]
     names = [f"Route {ROUTE_LETTERS[i]}" for i in range(len(routes))]
+    summaries = route_summaries(routes)
     best, reason = recommend(evaluations, names)
 
     return {
@@ -97,10 +124,11 @@ def plan_trip(origin: geo.Point, destination: geo.Point, departure: datetime, lo
         "recommended_route_id": ROUTE_LETTERS[best],
         "recommendation_reason": reason,
         "routes": [
-            _route_json(ROUTE_LETTERS[i], names[i], ev, departure, i == best)
+            _route_json(ROUTE_LETTERS[i], names[i], summaries[i], ev, departure, i == best)
             for i, ev in enumerate(evaluations)
         ],
         "heatmap": heatmap,
+        "heatmap_error": heatmap_error,
         "notes": NOTES,
     }
 
@@ -110,7 +138,7 @@ def _conditions_for(plans: list[list[Checkpoint]], departure: datetime) -> list[
     flat = [cp for plan in plans for cp in plan]
     latest = max(cp.eta for cp in flat)
     hours = int((open_meteo.floor_hour(latest) - open_meteo.floor_hour(departure)).total_seconds() // 3600) + 2
-    series = open_meteo.hourly([cp.point for cp in flat], departure, hours)
+    series = open_meteo.hourly(_lookup_points([cp.point for cp in flat]), departure, hours)
     out, k = [], 0
     for plan in plans:
         row = []
@@ -122,8 +150,21 @@ def _conditions_for(plans: list[list[Checkpoint]], departure: datetime) -> list[
     return out
 
 
+def _lookup_points(points: list[geo.Point]) -> list[geo.Point]:
+    """Where each checkpoint's forecast is looked up.
+
+    Normally on the 0.05° grid next to the checkpoint. On very long trips at
+    10-mile spacing the grid is coarsened until one plan fits the weather API's
+    free-tier budget; ETAs and risk are still worked out per checkpoint.
+    """
+    degrees = open_meteo.SNAP_DEGREES
+    while len({open_meteo.snap(p, degrees) for p in points}) > MAX_CHECKPOINT_LOCATIONS:
+        degrees *= 2
+    return [open_meteo.snap(p, degrees) for p in points]
+
+
 def _heatmap(routes: list[Route], departure: datetime, load_lbs: float) -> dict:
-    points = corridor.corridor_points(routes)
+    points, spacing = corridor.corridor_points(routes)
     series = open_meteo.hourly(points, departure, HEATMAP_HOURS)
     start = open_meteo.floor_hour(departure)
     levels = [
@@ -133,19 +174,20 @@ def _heatmap(routes: list[Route], departure: datetime, load_lbs: float) -> dict:
     return {
         "start": start.isoformat(),
         "hours": HEATMAP_HOURS,
+        "spacing_miles": round(max(spacing, max(abs(o) for o in corridor.LATERAL_OFFSETS_MILES) / 2), 1),
         "points": [list(p) for p in points],
         "levels": levels,
     }
 
 
-def _route_json(route_id: str, name: str, ev, departure: datetime, recommended: bool) -> dict:
+def _route_json(route_id: str, name: str, summary: str, ev, departure: datetime, recommended: bool) -> dict:
     route = ev.route
     keep = geo.simplify(route.coords, SIMPLIFY_TOLERANCE_DEG)
     m = ev.miles_by_level
     return {
         "id": route_id,
         "name": name,
-        "summary": route.summary,
+        "summary": summary,
         "is_recommended": recommended,
         "distance_miles": round(route.distance_miles, 1),
         "duration_minutes": round(route.duration_seconds / 60),

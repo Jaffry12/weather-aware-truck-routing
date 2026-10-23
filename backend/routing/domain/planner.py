@@ -23,7 +23,7 @@ class Route:
     coords: list[geo.Point]
     cum_miles: list[float]
     cum_seconds: list[float]
-    summary: str = ""
+    roads: tuple[str, ...] = ()
 
     @property
     def distance_miles(self) -> float:
@@ -34,7 +34,7 @@ class Route:
         return self.cum_seconds[-1]
 
 
-def build_route(coords: list[geo.Point], segment_seconds: Sequence[float] | None, summary: str = "",
+def build_route(coords: list[geo.Point], segment_seconds: Sequence[float] | None, roads: Sequence[str] = (),
                 max_mph: float = TRUCK_MAX_MPH) -> Route:
     """Build a Route with truck-adjusted cumulative time at every vertex.
 
@@ -48,7 +48,7 @@ def build_route(coords: list[geo.Point], segment_seconds: Sequence[float] | None
     cum_seconds = [0.0]
     for miles, secs in zip(seg_miles, segment_seconds):
         cum_seconds.append(cum_seconds[-1] + max(secs, miles / max_mph * 3600))
-    return Route(coords=list(coords), cum_miles=cum_miles, cum_seconds=cum_seconds, summary=summary)
+    return Route(coords=list(coords), cum_miles=cum_miles, cum_seconds=cum_seconds, roads=tuple(roads))
 
 
 @dataclass(frozen=True)
@@ -165,7 +165,13 @@ def recommend(evaluations: Sequence[RouteEvaluation], names: Sequence[str]) -> t
         else:
             reasons.append(f"ties with {names[i]}")
     text = "; ".join(reasons)
-    return best, text[:1].upper() + text[1:] + "."
+    text = text[:1].upper() + text[1:] + "."
+    # Safety can cost time; say how much, so the trade-off is explicit.
+    fastest = min(range(len(evaluations)), key=lambda i: evaluations[i].route.duration_seconds)
+    extra = evaluations[best].route.duration_seconds - evaluations[fastest].route.duration_seconds
+    if extra >= 60:
+        text += f" It takes {_fmt_duration(extra)} longer than {names[fastest]}, the fastest option."
+    return best, text
 
 
 def _fmt_duration(seconds: float) -> str:
