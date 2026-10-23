@@ -9,7 +9,6 @@ dist/
 # Env & editors
 .env
 .env.*
-!.env.example
 .vercel
 .DS_Store
 .idea/
@@ -17,3 +16,4 @@ dist/
 
 .vercel
 .env*
+!.env.example
