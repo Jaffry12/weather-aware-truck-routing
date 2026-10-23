@@ -2,7 +2,7 @@
 
 A React + Django app that helps a truck driver pick the safest of three routes. It forecasts the weather each route will meet **at the time the truck gets there**, scores it with the brief's risk and load rules, and recommends a route.
 
-**Live demo:** _link added after deployment_  ·  **Walkthrough:** _Loom link_
+**Live demo:** https://weather-truck-routing-dawood.vercel.app  ·  **Walkthrough:** _Loom link_
 
 ![Denver to Salt Lake City: three routes, the recommended one highlighted, with the corridor risk field and the 0-48 h forecast timeline](docs/screenshot.jpg)
 
