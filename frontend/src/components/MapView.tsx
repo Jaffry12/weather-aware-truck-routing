@@ -235,7 +235,7 @@ export default function MapView(props: Props) {
       attributionControl: { compact: true, customAttribution: "Terrain: Mapzen, AWS Open Data" },
       // When the map sits below the sidebar (narrow screens) the page scrolls, so
       // one-finger drags and plain wheel scrolls should move the page, not the map.
-      cooperativeGestures: window.matchMedia("(max-width: 860px)").matches,
+      cooperativeGestures: window.matchMedia("(max-width: 1024px)").matches,
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     const themeControl = new ThemeControl(() => toggleThemeRef.current());
@@ -252,6 +252,12 @@ export default function MapView(props: Props) {
     });
     popup.on("close", () => (pinnedRef.current = false));
     popupRef.current = popup;
+
+    // The Liberty basemap references a few icons its sprite sheet lacks ("circle-11");
+    // answer with a blank image instead of letting MapLibre warn on every tile.
+    map.on("styleimagemissing", (e) => {
+      if (!map.hasImage(e.id)) map.addImage(e.id, { width: 1, height: 1, data: new Uint8Array(4) });
+    });
 
     map.on("style.load", () => {
       addOverlays(map, shownThemeRef.current);

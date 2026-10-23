@@ -15,7 +15,7 @@ Every line of the brief, where it is implemented, and how it is checked.
 | Brief | How it is met | Checked by |
 |---|---|---|
 | React + Django web app | React 19 + TypeScript (Vite, MapLibre) frontend; Django 5 + DRF API | — |
-| User enters origin & destination | Place search with suggestions (Photon/OpenStreetMap), keyboard support, swap button | `test_geocode_*` |
+| User enters origin & destination | Place search with suggestions (Photon/OpenStreetMap, with Open-Meteo city search as a fallback when Photon throttles), keyboard support, swap button | `test_geocode_*` |
 | User enters departure date/time | Date-time picker; the API rejects times over 1 h in the past or beyond the 13-day forecast | `test_validation_errors` |
 | User enters load weight | Pounds, 0–200,000; drives the load rules | `test_validation_errors`, `test_risk` |
 | Generate 3 route options using a routing API | OSRM alternatives, then forced detours either side of the fastest route; a relaxed second pass when the road network leaves only near-duplicates | `test_plan_returns_three_routes…`, `test_a_third_route_is_found…` |
@@ -36,7 +36,7 @@ Every line of the brief, where it is implemented, and how it is checked.
 - **Recommendation**, ranked by the brief's priorities, with a plain-English reason ("Fewer Severe miles than Route B (0 vs 25 mi)"). When the safest route is not the fastest, the reason states the cost ("It takes 3 h 47 min longer than Route A, the fastest option").
 - **Map:** all routes on a terrain basemap, every route's checkpoints in their risk colour (hover for ETA and per-factor risk, click to pin), route tags with time, distance and worst risk, and a **weather-risk heatmap along the trip corridor** with a **0–48 h forecast timeline**. A **Weather Risk / Precipitation / Wind** switch shows overall risk or a single factor. Truck markers show where each truck is at the selected time, and a band on the timeline marks when the selected truck is on the road.
 - **Smooth playback.** Play runs on animation frames: the trucks glide along their routes, the timeline moves continuously, and the weather field cross-fades between hourly frames. Dragging the timeline does the same; arrow keys step whole hours. With the OS "reduce motion" setting it steps hour by hour.
-- **Light and dark themes.** The app follows the device setting, and a toggle under the map's zoom buttons overrides it (remembered in the browser). The map swaps to a dark basemap without losing the plan, layer or camera. The layout works on phones too.
+- **Light and dark themes.** The app follows the device setting, and a toggle under the map's zoom buttons overrides it (remembered in the browser). The map swaps to a dark basemap without losing the plan, layer or camera. The layout works on phones and tablets (stacked up to 1024 px wide).
 - The default trip (Denver → Salt Lake City, across the windy I-80 corridor in Wyoming) is planned on arrival, so the first screen already shows results.
 
 ## How the logic works
@@ -141,7 +141,7 @@ npm install
 npm run dev                           # http://localhost:5173, /api is proxied to Django
 ```
 
-Tests: `cd backend && pytest` (73 tests: every threshold boundary and load rule, the ranking and its explanation, mile attribution, corridor sampling, route naming, the three-route guarantee, per-checkpoint weather lookups, place search, and the API with OSRM and Open-Meteo faked, including unroutable, outage, rate-limit retry and partial-failure paths).
+Tests: `cd backend && pytest` (74 tests: every threshold boundary and load rule, the ranking and its explanation, mile attribution, corridor sampling, route naming, the three-route guarantee, per-checkpoint weather lookups, place search and its fallback, and the API with OSRM and Open-Meteo faked, including unroutable, outage, rate-limit retry and partial-failure paths).
 
 ### Configuration
 
@@ -150,7 +150,7 @@ Tests: `cd backend && pytest` (73 tests: every threshold boundary and load rule,
 | `DJANGO_DEBUG` | `1` (`0` on Vercel) | Debug mode |
 | `DJANGO_SECRET_KEY` | dev key | Set in production |
 | `OSRM_URL` | public OSRM demo | Point at a self-hosted OSRM (or a truck profile) |
-| `OPEN_METEO_URL`, `PHOTON_URL` | public endpoints | Swap providers |
+| `OPEN_METEO_URL`, `PHOTON_URL`, `CITY_SEARCH_URL` | public endpoints | Swap providers (forecasts, place search, fallback city search) |
 | `CORS_ALLOWED_ORIGINS` | Vite dev origin | Needed only if the frontend is hosted separately |
 
 ## Deployment

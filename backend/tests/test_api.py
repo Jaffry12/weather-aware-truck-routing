@@ -276,3 +276,14 @@ def test_heatmap_forecasts_do_not_wait_on_a_rate_limit(monkeypatch):
         with pytest.raises(RateLimited):
             open_meteo.hourly([(-90.0, 38.0)], datetime.now(timezone.utc), 6, retries=0)
     assert waits == []
+
+
+def test_geocode_falls_back_to_city_search_when_photon_is_down():
+    city = {"name": "Kansas City", "admin1": "Missouri", "country": "United States",
+            "latitude": 39.0997, "longitude": -94.5786}
+    with responses.RequestsMock() as rsps:
+        rsps.add(responses.GET, re.compile(r"https://photon\.komoot\.io/.*"), status=503, body="busy")
+        rsps.add(responses.GET, re.compile(r"https://geocoding-api\.open-meteo\.com/.*"), json={"results": [city]})
+        resp = APIClient().get("/api/geocode", {"q": "kansas city"})
+    assert resp.status_code == 200
+    assert resp.json()["results"][0] == {"label": "Kansas City, Missouri, United States", "lat": 39.0997, "lon": -94.5786}

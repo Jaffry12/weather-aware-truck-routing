@@ -13,7 +13,7 @@ from .domain.risk import Conditions, Risk, factor_levels
 
 ROUTE_COUNT = 3
 HEATMAP_HOURS = 49  # hourly frames for +0 h to +48 h inclusive
-MAX_DETOUR_RATIO = 1.6          # skip alternatives this much longer than the fastest
+MAX_DETOUR_RATIO = 1.6          # skip alternatives this much longer than the shortest
 SIMILARITY_THRESHOLD = 0.85     # share of grid cells two routes may share before one is a duplicate
 RELAXED_DETOUR_RATIO = 2.0      # second pass, used only if the strict rules leave fewer than three
 RELAXED_SIMILARITY = 0.97

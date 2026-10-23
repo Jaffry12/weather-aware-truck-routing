@@ -52,6 +52,7 @@ TIME_ZONE = "UTC"
 OSRM_URL = os.environ.get("OSRM_URL", "https://router.project-osrm.org")
 OPEN_METEO_URL = os.environ.get("OPEN_METEO_URL", "https://api.open-meteo.com/v1/forecast")
 PHOTON_URL = os.environ.get("PHOTON_URL", "https://photon.komoot.io/api/")
+CITY_SEARCH_URL = os.environ.get("CITY_SEARCH_URL", "https://geocoding-api.open-meteo.com/v1/search")
 
 LOGGING = {
     "version": 1,

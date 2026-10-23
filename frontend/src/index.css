@@ -432,7 +432,7 @@ button.link:hover { text-decoration: underline; }
   box-shadow: var(--shadow-lg);
   backdrop-filter: blur(8px);
 }
-.forecast-top { display: flex; align-items: center; gap: 18px; }
+.forecast-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
 .play {
   flex-shrink: 0;
   display: grid;
@@ -546,7 +546,12 @@ button.link:hover { text-decoration: underline; }
 :root[data-theme="dark"] .maplibregl-cooperative-gesture-screen { background: rgba(11, 18, 32, 0.7); }
 
 /* ---------- Narrow screens: sidebar above the map ---------- */
-@media (max-width: 860px) {
+/* Laptops: a slightly tighter legend so the timeline header stays on one line. */
+@media (max-width: 1360px) {
+  .legend { gap: 12px; padding: 8px 14px; font-size: 12.5px; }
+}
+
+@media (max-width: 1024px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; height: auto; }
   .sidebar { border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
   .map-area { height: 82vh; min-height: 540px; }

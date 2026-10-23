@@ -9,7 +9,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from . import services
-from .clients import photon
+from .clients import city_search, photon
 from .clients.http import RateLimited, UpstreamError
 from .clients.osrm import NoRoute
 
@@ -56,6 +56,10 @@ def geocode(request: Request) -> Response:
         return Response({"results": []})
     try:
         return Response({"results": photon.search(query)})
+    except UpstreamError:
+        log.warning("photon failed; falling back to city search")
+    try:
+        return Response({"results": city_search.search(query)})
     except UpstreamError as exc:
         return _upstream_error(exc)
 
