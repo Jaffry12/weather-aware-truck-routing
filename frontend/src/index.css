@@ -1,43 +1,54 @@
 :root {
-  --bg: #f5f7fb;
+  --on-accent: #ffffff;
+  --shield-check: #ffffff;
+  --bg: #f5f5f4;
   --panel: #ffffff;
-  --text: #0f172a;
-  --text-2: #334155;
-  --muted: #64748b;
-  --faint: #94a3b8;
-  --line: #e3e8f0;
-  --line-strong: #d5dce6;
-  --accent: #2563eb;
-  --accent-strong: #1d4ed8;
-  --accent-soft: #eff5ff;
-  --accent-tint: #dbe7fe;
-  --accent-gradient: linear-gradient(180deg, #3b82f6 0%, #2563eb 60%, #1e54d6 100%);
+  --text: #1c1917;
+  --text-2: #44403c;
+  --muted: #78716c;
+  --faint: #a8a29e;
+  --line: #e7e5e4;
+  --line-strong: #d6d3d1;
+  --accent: #1c1917;
+  --accent-strong: #0c0a09;
+  --accent-soft: #f2f2f0;
+  --accent-tint: #e7e5e4;
+  --accent-gradient: linear-gradient(180deg, #44403c 0%, #1c1917 100%);
+  --accent-rgb: 28 25 23; /* for glows: rgb(var(--accent-rgb) / alpha) */
+  /* Brand (logo, shield) and map route colours. */
+  --brand: #292524;
+  --brand-deep: #0c0a09;
+  --brand-light: #a8a29e;
+  --brand-pale: #e7e5e4;
+  --route-selected: #1c1917;
+  --route-other: #a1a1aa;
+  --route-casing: #ffffff;
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.05);
   --shadow-md: 0 2px 4px rgba(15, 23, 42, 0.04), 0 10px 26px -8px rgba(15, 23, 42, 0.2);
   --shadow-lg: 0 4px 10px rgba(15, 23, 42, 0.06), 0 18px 40px -12px rgba(15, 23, 42, 0.28);
   --surface: #ffffff;
-  --surface-2: #f8fafc;
-  --surface-hover: #f1f5f9;
-  --text-3: #475569;
-  --line-hover: #b9c6d8;
-  --row-line: #f1f4f8;
-  --row-hover: #f5f8fd;
-  --swap-border: #d6e3fb;
-  --radio-border: #b8c2d0;
-  --selected-bg: #f3f8ff;
-  --selected-border: #3b82f6;
-  --strip-bg: #e2e8f0;
-  --why-bg: #edf4ff;
-  --why-border: #d9e7fd;
-  --why-title: #1e3a8a;
+  --surface-2: #fafaf9;
+  --surface-hover: #f2f2f0;
+  --text-3: #57534e;
+  --line-hover: #a8a29e;
+  --row-line: #f0efed;
+  --row-hover: #f7f7f5;
+  --swap-border: #e7e5e4;
+  --radio-border: #d6d3d1;
+  --selected-bg: #fafaf9;
+  --selected-border: #1c1917;
+  --strip-bg: #e7e5e4;
+  --why-bg: #f5f5f4;
+  --why-border: #e7e5e4;
+  --why-title: #1c1917;
   --glass: rgba(255, 255, 255, 0.97);
-  --track: #e4ebf5;
-  --track-progress: #c4d9fb;
-  --trip-window: #3b82f6;
-  --tick: #b8c4d4;
-  --tag-bg: #4b5563;
+  --track: #ececea;
+  --track-progress: #d6d3d1;
+  --trip-window: #57534e;
+  --tick: #d6d3d1;
+  --tag-bg: #57534e;
   --tag-border: #ffffff;
-  --truck: #475569;
+  --truck: #57534e;
   --marker-halo: #ffffff;
   --error-bg: #fef2f2;
   --error-border: #fecaca;
@@ -104,7 +115,7 @@ h1, h2, h3, p { margin: 0; }
   border-radius: 10px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.input-shell:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14); }
+.input-shell:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.14); }
 .input-shell input {
   flex: 1;
   min-width: 0;
@@ -116,6 +127,7 @@ h1, h2, h3, p { margin: 0; }
   font-size: 13.5px;
   color: var(--text);
 }
+.input-shell input { text-overflow: ellipsis; }
 .input-shell input::placeholder { color: var(--faint); }
 .input-icon { color: var(--muted); flex-shrink: 0; }
 .input-text { flex: 1; min-width: 0; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -161,21 +173,21 @@ h1, h2, h3, p { margin: 0; }
   transition: background 0.15s;
 }
 .segmented button:hover { background: var(--accent-tint); }
-.segmented button.on { background: var(--accent-gradient); color: #fff; font-weight: 600; box-shadow: 0 2px 6px -1px rgba(37, 99, 235, 0.5); }
+.segmented button.on { background: var(--accent-gradient); color: var(--on-accent); font-weight: 600; box-shadow: 0 2px 6px -1px rgb(var(--accent-rgb) / 0.5); }
 
 button.primary {
   height: 46px;
   border: 0;
   border-radius: 10px;
   background: var(--accent-gradient);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 15px;
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  box-shadow: 0 8px 18px -6px rgba(37, 99, 235, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 18px -6px rgb(var(--accent-rgb) / 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.18);
   transition: filter 0.15s, transform 0.05s;
 }
 button.primary:hover { filter: brightness(1.06); }
@@ -349,7 +361,7 @@ button.link:hover { text-decoration: underline; }
   transition: background 0.15s;
 }
 .layer-switch button:hover { background: var(--surface-hover); }
-.layer-switch button.on { background: var(--accent-gradient); color: #fff; box-shadow: 0 4px 10px -3px rgba(37, 99, 235, 0.55); }
+.layer-switch button.on { background: var(--accent-gradient); color: var(--on-accent); box-shadow: 0 4px 10px -3px rgb(var(--accent-rgb) / 0.55); }
 
 .maplibregl-ctrl-top-right .maplibregl-ctrl { margin: 20px 20px 0 0; }
 .maplibregl-ctrl-group:not(:empty) { border-radius: 12px; box-shadow: var(--shadow-md); overflow: hidden; }
@@ -394,7 +406,7 @@ button.link:hover { text-decoration: underline; }
 }
 .route-tag-meta { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; opacity: 0.88; }
 .route-tag-meta i { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85); }
-.route-tag.selected { background: var(--accent); padding: 5px 12px 6px; font-size: 14px; z-index: 2; }
+.route-tag.selected { background: var(--accent); color: var(--on-accent); padding: 5px 12px 6px; font-size: 14px; z-index: 2; }
 .route-tag.selected .route-tag-meta { font-size: 11.5px; opacity: 0.95; }
 
 /* Checkpoint popup */
@@ -443,8 +455,8 @@ button.link:hover { text-decoration: underline; }
   border: 0;
   border-radius: 50%;
   background: var(--accent-gradient);
-  color: #fff;
-  box-shadow: 0 8px 18px -6px rgba(37, 99, 235, 0.65);
+  color: var(--on-accent);
+  box-shadow: 0 8px 18px -6px rgb(var(--accent-rgb) / 0.65);
 }
 .forecast-label { display: flex; align-items: baseline; gap: 9px; font-size: 18px; font-weight: 600; white-space: nowrap; }
 .forecast-label strong { font-weight: 700; }
@@ -473,55 +485,65 @@ button.link:hover { text-decoration: underline; }
 .track input[type="range"]::-moz-range-track { height: 24px; background: transparent; }
 .track input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; width: 20px; height: 20px; margin-top: 2px; border-radius: 50%;
-  background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.35), 0 2px 6px rgba(15, 23, 42, 0.35);
+  background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.35), 0 2px 6px rgba(15, 23, 42, 0.35);
 }
 .track input[type="range"]::-moz-range-thumb {
   width: 14px; height: 14px; border-radius: 50%;
-  background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.35), 0 2px 6px rgba(15, 23, 42, 0.35);
+  background: var(--accent); border: 3px solid var(--surface); box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.35), 0 2px 6px rgba(15, 23, 42, 0.35);
 }
-.track input[type="range"]:focus-visible { outline: 2px solid rgba(37, 99, 235, 0.35); outline-offset: 3px; border-radius: 6px; }
+.track input[type="range"]:focus-visible { outline: 2px solid rgb(var(--accent-rgb) / 0.35); outline-offset: 3px; border-radius: 6px; }
 .tick-labels { position: relative; height: 20px; margin-top: 2px; font-size: 12.5px; color: var(--muted); }
 .tick-labels span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 
 /* ---------- Dark theme ---------- */
 :root[data-theme="dark"] {
-  --bg: #0b1220;
-  --panel: #111a2e;
-  --surface: #111a2e;
-  --surface-2: #0e1628;
-  --surface-hover: #1a2540;
-  --text: #e6edf7;
-  --text-2: #c3cede;
-  --text-3: #9fb0c8;
-  --muted: #8b9ab2;
-  --faint: #66768f;
-  --line: #1f2b45;
-  --line-strong: #2a3756;
-  --line-hover: #3a4b70;
-  --row-line: #1a2540;
-  --row-hover: #16213a;
-  --accent: #3b82f6;
-  --accent-strong: #60a5fa;
-  --accent-soft: #15233f;
-  --accent-tint: #1c3157;
-  --accent-gradient: linear-gradient(180deg, #5b95f8 0%, #3b82f6 55%, #2563eb 100%);
-  --swap-border: #24375e;
-  --radio-border: #3a4865;
-  --selected-bg: #13244a;
-  --selected-border: #3b82f6;
-  --strip-bg: #24314d;
-  --why-bg: #112142;
-  --why-border: #1e3563;
-  --why-title: #bfdbfe;
-  --glass: rgba(17, 26, 46, 0.95);
-  --track: #1e2a44;
-  --track-progress: #23447c;
-  --trip-window: #3b82f6;
-  --tick: #3a4865;
-  --tag-bg: #334155;
-  --tag-border: #cbd5e1;
-  --truck: #cbd5e1;
-  --marker-halo: #0b1220;
+  --on-accent: #1c1917;
+  --shield-check: #1c1917;
+  --brand: #a8a29e;
+  --brand-deep: #78716c;
+  --brand-light: #d6d3d1;
+  --brand-pale: #e7e5e4;
+  --bg: #111110;
+  --panel: #1a1a19;
+  --surface: #1a1a19;
+  --surface-2: #151514;
+  --surface-hover: #242422;
+  --text: #f5f5f4;
+  --text-2: #d6d3d1;
+  --text-3: #a8a29e;
+  --muted: #8a8580;
+  --faint: #6b6762;
+  --line: #2a2928;
+  --line-strong: #353330;
+  --line-hover: #4a4744;
+  --row-line: #232221;
+  --row-hover: #1f1e1d;
+  --accent: #e7e5e4;
+  --accent-strong: #fafaf9;
+  --accent-soft: #262524;
+  --accent-tint: #302e2c;
+  --accent-gradient: linear-gradient(180deg, #fafaf9 0%, #d6d3d1 100%);
+  --accent-rgb: 231 229 228;
+  --route-selected: #f5f5f4;
+  --route-other: #8a8580;
+  --route-casing: #111110;
+  --swap-border: #2f2d2b;
+  --radio-border: #4a4744;
+  --selected-bg: #232221;
+  --selected-border: #e7e5e4;
+  --strip-bg: #2f2d2b;
+  --why-bg: #1d1c1b;
+  --why-border: #2f2d2b;
+  --why-title: #f5f5f4;
+  --glass: rgba(26, 26, 25, 0.95);
+  --track: #2a2928;
+  --track-progress: #4a4744;
+  --trip-window: #d6d3d1;
+  --tick: #4a4744;
+  --tag-bg: #44403c;
+  --tag-border: #d6d3d1;
+  --truck: #d6d3d1;
+  --marker-halo: #111110;
   --error-bg: #2a1215;
   --error-border: #5c1d24;
   --error-text: #fca5a5;
@@ -533,8 +555,8 @@ button.link:hover { text-decoration: underline; }
   --risk-tint-3: rgba(239, 68, 68, 0.2); --risk-tint-4: rgba(168, 85, 247, 0.22);
   color-scheme: dark;
 }
-:root[data-theme="dark"] .truck-marker.selected { color: #60a5fa; }
-:root[data-theme="dark"] .why svg { filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.35)); }
+:root[data-theme="dark"] .truck-marker.selected { color: #fafaf9; }
+
 /* MapLibre's own controls: dark surfaces, light icons. */
 :root[data-theme="dark"] .maplibregl-ctrl-group { background: var(--surface); }
 :root[data-theme="dark"] .maplibregl-ctrl-group button + button { border-top-color: var(--line); }
@@ -575,6 +597,8 @@ button.link:hover { text-decoration: underline; }
   .brand p { white-space: normal; }
   .layer-switch button:not(.on) span { display: none; }
   .route-card { padding: 12px; gap: 10px; }
+  .input-shell { gap: 6px; padding: 0 8px 0 9px; }
+  .input-shell input, .input-text { font-size: 13px; }
   /* The cards above already carry each route's summary; keep map tags compact. */
   .route-tag-meta { display: none; }
   .route-tag, .route-tag.selected { padding: 3px 9px; font-size: 12.5px; }

@@ -24,5 +24,5 @@ export function saveTheme(theme: Theme): void {
 
 export function applyTheme(theme: Theme): void {
   document.documentElement.dataset.theme = theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#0b1220" : "#f5f7fb");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#111110" : "#f5f5f4");
 }

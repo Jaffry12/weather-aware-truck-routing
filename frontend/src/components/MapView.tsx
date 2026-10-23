@@ -23,22 +23,14 @@ const LAYER_PROPERTY: Record<WeatherLayer, string> = { risk: "r", precip: "p", w
 // as the forecast time moves between them.
 const HEAT_LAYERS = ["heat", "heat-next"] as const;
 
-/** Colours for the layers this app draws on top of the basemap. */
+/** Per-theme look of the layers this app draws (route colours come from CSS; see routeColors). */
 const PALETTE = {
   light: {
-    casing: "#ffffff",
-    selected: "#1d4ed8",
-    other: "#7b8794",
-    checkpointStroke: "#ffffff",
     lowOpacity: 0.3,
     riskOpacity: 0.62,
     hillshade: { exaggeration: 0.35, shadow: "#4b5d6b", highlight: "#ffffff", accent: "#6b7f72" },
   },
   dark: {
-    casing: "#0b1220",
-    selected: "#3b82f6",
-    other: "#8191a8",
-    checkpointStroke: "#0b1220",
     lowOpacity: 0.15,
     riskOpacity: 0.5,
     hillshade: { exaggeration: 0.45, shadow: "#000000", highlight: "#3b4a63", accent: "#1c2533" },
@@ -72,9 +64,21 @@ function discRadius(miles: number, lat: number): maplibregl.ExpressionSpecificat
   return ["interpolate", ["exponential", 2], ["zoom"], 0, r0, 9, r0 * 2 ** 9];
 }
 
+/** Route colours from the active theme's CSS variables, so a palette is defined in one place. */
+function routeColors() {
+  const css = getComputedStyle(document.documentElement);
+  const read = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+  return {
+    casing: read("--route-casing", "#ffffff"),
+    selected: read("--route-selected", "#1c1917"),
+    other: read("--route-other", "#a1a1aa"),
+    checkpointStroke: read("--route-casing", "#ffffff"),
+  };
+}
+
 /** Add the terrain, weather, route and checkpoint layers to a freshly loaded basemap. */
 function addOverlays(map: maplibregl.Map, theme: Theme) {
-  const p = PALETTE[theme];
+  const p = { ...PALETTE[theme], ...routeColors() };
   const layers = map.getStyle().layers;
   const firstLine = layers.find((l) => /^(water|waterway|tunnel|road|bridge|highway)/.test(l.id))?.id;
   const firstLabel = layers.find((l) => l.type === "symbol")?.id;

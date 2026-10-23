@@ -122,12 +122,12 @@ export const ShieldCheckIcon = ({ size = 40 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden>
     <defs>
       <linearGradient id="shield-fill" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor="#60a5fa" />
-        <stop offset="1" stopColor="#2563eb" />
+        <stop offset="0" style={{ stopColor: "var(--brand-light)" }} />
+        <stop offset="1" style={{ stopColor: "var(--brand)" }} />
       </linearGradient>
     </defs>
     <path d="M20 3.5 33 8.4v9.8c0 8.2-5.5 14.2-13 16.3C12.5 32.4 7 26.4 7 18.2V8.4z" fill="url(#shield-fill)" />
-    <path d="m14 19.2 4.2 4.2 8-8.3" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"
+    <path d="m14 19.2 4.2 4.2 8-8.3" fill="none" style={{ stroke: "var(--shield-check)" }} strokeWidth="3" strokeLinecap="round"
       strokeLinejoin="round" />
   </svg>
 );
@@ -137,19 +137,19 @@ export const Logo = () => (
   <svg width="66" height="41" viewBox="0 0 74 46" aria-hidden>
     <defs>
       <linearGradient id="logo-cloud" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor="#bfdbfe" />
-        <stop offset="1" stopColor="#60a5fa" />
+        <stop offset="0" style={{ stopColor: "var(--brand-pale)" }} />
+        <stop offset="1" style={{ stopColor: "var(--brand-light)" }} />
       </linearGradient>
       <linearGradient id="logo-truck" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stopColor="#3b82f6" />
-        <stop offset="1" stopColor="#1d4ed8" />
+        <stop offset="0" style={{ stopColor: "var(--brand)" }} />
+        <stop offset="1" style={{ stopColor: "var(--brand-deep)" }} />
       </linearGradient>
     </defs>
     <path d="M22 24h30a8.5 8.5 0 0 0 1.2-16.9A12.5 12.5 0 0 0 29.6 6 9 9 0 0 0 22 24z" fill="url(#logo-cloud)" />
-    <path d="M2 18h9M0 23h9M3 28h8" stroke="#93c5fd" strokeWidth="2.4" strokeLinecap="round" />
+    <path d="M2 18h9M0 23h9M3 28h8" style={{ stroke: "var(--brand-light)" }} strokeWidth="2.4" strokeLinecap="round" />
     <rect x="13" y="16" width="33" height="19" rx="3" fill="url(#logo-truck)" />
-    <path d="M46 21h11l8 8.5V35H46z" fill="#1e40af" />
-    <path d="M49 23.5h7l4.8 5H49z" fill="#dbeafe" />
+    <path d="M46 21h11l8 8.5V35H46z" style={{ fill: "var(--brand-deep)" }} />
+    <path d="M49 23.5h7l4.8 5H49z" style={{ fill: "var(--brand-pale)" }} />
     <circle cx="22" cy="37" r="4.6" fill="#0f172a" stroke="#fff" strokeWidth="2.2" />
     <circle cx="56" cy="37" r="4.6" fill="#0f172a" stroke="#fff" strokeWidth="2.2" />
   </svg>

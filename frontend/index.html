@@ -5,7 +5,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="description" content="Compare truck routes by forecast weather risk at the truck's arrival time." />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f5f7fb" />
+    <meta name="theme-color" content="#f5f5f4" />
     <script>
       // Apply the theme before first paint so dark mode never flashes white.
       (function () {
@@ -13,7 +13,7 @@
         try { saved = localStorage.getItem("wtr-theme"); } catch (e) {}
         var dark = saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
         document.documentElement.dataset.theme = dark ? "dark" : "light";
-        if (dark) document.querySelector('meta[name="theme-color"]').setAttribute("content", "#0b1220");
+        if (dark) document.querySelector('meta[name="theme-color"]').setAttribute("content", "#111110");
       })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
