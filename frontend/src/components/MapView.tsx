@@ -70,8 +70,8 @@ function routeColors() {
   const read = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
   return {
     casing: read("--route-casing", "#ffffff"),
-    selected: read("--route-selected", "#1c1917"),
-    other: read("--route-other", "#a1a1aa"),
+    selected: read("--route-selected", "#1d4ed8"),
+    other: read("--route-other", "#7b8794"),
     checkpointStroke: read("--route-casing", "#ffffff"),
   };
 }
